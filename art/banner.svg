@@ -1,0 +1,63 @@
+<svg width="100%" viewBox="0 0 1200 374" role="img" xmlns="http://www.w3.org/2000/svg">
+  <title>LaravelEasyAI Banner</title>
+  <desc>LaravelEasyAI package banner — One interface, any AI</desc>
+
+  <defs>
+    <linearGradient id="iconGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#a855f7"/>
+      <stop offset="100%" stop-color="#6366f1"/>
+    </linearGradient>
+    <linearGradient id="aiTextGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#818cf8"/>
+      <stop offset="100%" stop-color="#60a5fa"/>
+    </linearGradient>
+  </defs>
+
+  <rect width="1200" height="374" fill="#0d1117"/>
+
+  <!-- AI icon -->
+  <rect x="556" y="36" width="88" height="88" rx="20" fill="url(#iconGrad)"/>
+  <text x="600" y="97" font-family="system-ui, sans-serif" font-size="38" font-weight="700" fill="white" text-anchor="middle">AI</text>
+
+  <!-- Title: Laravel in white, EasyAI in gradient -->
+  <text font-family="system-ui, sans-serif" font-size="58" font-weight="700" text-anchor="middle" y="190">
+    <tspan x="600" fill="white">Laravel</tspan><tspan fill="url(#aiTextGrad)">EasyAI</tspan>
+  </text>
+
+  <!-- Divider -->
+  <line x1="350" y1="210" x2="850" y2="210" stroke="#30363d" stroke-width="1"/>
+
+  <!-- Tagline -->
+  <text x="600" y="248" font-family="system-ui, sans-serif" font-size="18" fill="#8b949e" text-anchor="middle">One interface, any AI — Ollama · OpenAI · Anthropic · DeepSeek</text>
+
+  <!-- Terminal box -->
+  <rect x="310" y="268" width="580" height="46" rx="8" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+  <text x="345" y="297" font-family="monospace" font-size="15" fill="#3fb950">$</text>
+  <text x="362" y="297" font-family="monospace" font-size="15" fill="#3fb950"> composer require easybdit/laraveleasyai</text>
+
+  <!-- Ollama badge -->
+  <rect x="228" y="330" width="110" height="34" rx="17" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+  <circle cx="252" cy="347" r="7" fill="none" stroke="#8b949e" stroke-width="1.5"/>
+  <circle cx="252" cy="347" r="3" fill="#8b949e"/>
+  <text x="265" y="352" font-family="system-ui, sans-serif" font-size="13" fill="#e6edf3">Ollama</text>
+
+  <!-- OpenAI badge -->
+  <rect x="354" y="330" width="110" height="34" rx="17" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+  <rect x="368" y="340" width="14" height="14" rx="3" fill="#10a37f"/>
+  <text x="388" y="352" font-family="system-ui, sans-serif" font-size="13" fill="#e6edf3">OpenAI</text>
+
+  <!-- Anthropic badge -->
+  <rect x="480" y="330" width="120" height="34" rx="17" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+  <circle cx="498" cy="347" r="7" fill="#c084fc"/>
+  <text x="512" y="352" font-family="system-ui, sans-serif" font-size="13" fill="#e6edf3">Anthropic</text>
+
+  <!-- DeepSeek badge -->
+  <rect x="616" y="330" width="118" height="34" rx="17" fill="#161b22" stroke="#30363d" stroke-width="1"/>
+  <rect x="630" y="340" width="14" height="14" rx="3" fill="#3b82f6"/>
+  <text x="650" y="352" font-family="system-ui, sans-serif" font-size="13" fill="#e6edf3">DeepSeek</text>
+
+  <!-- + yours badge -->
+  <rect x="750" y="330" width="90" height="34" rx="17" fill="none" stroke="#6366f1" stroke-width="1.5"/>
+  <text x="795" y="352" font-family="system-ui, sans-serif" font-size="13" fill="#818cf8" text-anchor="middle">+ yours</text>
+
+</svg>

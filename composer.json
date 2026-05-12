@@ -1,0 +1,67 @@
+{
+    "name": "easybdit/laraveleasyai",
+    "version": "1.0.0",
+    "description": "Unified AI chat for Laravel — Ollama, OpenAI, Anthropic (Claude), DeepSeek. One interface, any AI.",
+    "keywords": [
+        "laravel", "ai", "ollama", "openai", "anthropic",
+        "claude", "deepseek", "chatgpt", "llm", "gpt",
+        "artificial-intelligence", "chat", "streaming",
+        "laravel-package", "php-ai", "machine-learning",
+        "rag", "projects", "knowledge-base"
+    ],
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Md Murad Hosen",
+            "email": "muradbd.info@gmail.com",
+            "homepage": "https://www.easyit.com.bd"
+        }
+    ],
+    "funding": [
+        {
+            "type": "github",
+             "url": "https://github.com/sponsors/easybdit"
+        },
+        {
+            "type": "custom",
+            "url": "https://easyit.com.bd/donate"
+        }
+    ],
+    "require": {
+        "php": "^8.0",
+        "illuminate/support": "^9.0 || ^10.0 || ^11.0 || ^12.0 || ^13.0",
+        "illuminate/http": "^9.0 || ^10.0 || ^11.0 || ^12.0 || ^13.0"
+    },
+    "require-dev": {
+        "orchestra/testbench": "^7.0 || ^8.0 || ^9.0 || ^10.0",
+        "phpunit/phpunit": "^9.5 || ^10.5 || ^11.0"
+    },
+    "suggest": {
+        "smalot/pdfparser": "Required for PDF file ingestion in Projects (^2.0)"
+    },
+    "autoload": {
+        "psr-4": {
+            "EasyAI\\LaravelAI\\": "src/"
+        },
+        "files": [
+            "src/helpers.php"
+        ]
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "EasyAI\\LaravelAI\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "EasyAI\\LaravelAI\\AIServiceProvider"
+            ],
+            "aliases": {
+                "AI": "EasyAI\\LaravelAI\\Facades\\AI"
+            }
+        }
+    },
+    "minimum-stability": "stable",
+    "prefer-stable": true
+}
