@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/easybdit/laraveleasyai/main/art/banner.svg" width="100%" alt="LaravelAI Banner">
+  <img src="https://raw.githubusercontent.com/easybdit/laravelai/main/art/banner.svg" width="100%" alt="LaravelAI Banner">
 </p>
 
 <h1 align="center">LaravelAI</h1>
@@ -18,7 +18,7 @@
   <a href="https://packagist.org/packages/easybdit/laraveleasyai"><img src="https://img.shields.io/packagist/dt/easybdit/laraveleasyai.svg?style=flat-square&label=downloads" alt="Total Downloads"></a>
   <a href="https://packagist.org/packages/easybdit/laraveleasyai"><img src="https://img.shields.io/packagist/l/easybdit/laraveleasyai.svg?style=flat-square" alt="License"></a>
   <a href="https://packagist.org/packages/easybdit/laraveleasyai"><img src="https://img.shields.io/packagist/php-v/easybdit/laraveleasyai.svg?style=flat-square" alt="PHP Version"></a>
-  <a href="https://github.com/easybdit/laraveleasyai/actions"><img src="https://img.shields.io/github/actions/workflow/status/easybdit/laraveleasyai/tests.yml?branch=main&style=flat-square&label=tests" alt="Tests"></a>
+  <a href="https://github.com/easybdit/laravelai/actions"><img src="https://img.shields.io/github/actions/workflow/status/easybdit/laravelai/tests.yml?branch=main&style=flat-square&label=tests" alt="Tests"></a>
 </p>
 
 <p align="center">
@@ -905,7 +905,7 @@ This is common in SPA setups (Vue/React front ends living inside a Laravel app) 
 </p>
 
 - ⭐ **Star** this repo on GitHub
-- 🐛 **Report bugs** via [Issues](https://github.com/easybdit/laraveleasyai/issues)
+- 🐛 **Report bugs** via [Issues](https://github.com/easybdit/laravelai/issues)
 - 🔀 **Submit a PR** — contributions welcome
 - 📢 **Share** with your developer friends
 
