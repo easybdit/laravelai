@@ -107,6 +107,20 @@ return [
         'system_prompt'  => env('AI_RAG_SYSTEM_PROMPT', 'Answer using ONLY the context below. If unsure, say so.'),
 
         /**
+         * The built-in RAG search is an in-PHP cosine scan — no external
+         * vector database required, which is the whole point for a
+         * zero-setup default. It scores every stored chunk (in bounded
+         * batches, not all at once) rather than using an approximate
+         * nearest-neighbor index, so it's genuinely fine up to a few tens
+         * of thousands of chunks but isn't a substitute for a real vector
+         * store at large scale. This caps how many rows a single search
+         * will scan before stopping — a slower-than-ideal answer beats a
+         * request that never returns. A warning is logged (once per
+         * request) whenever a scan actually hits this ceiling.
+         */
+        'max_scan_rows'  => (int) env('AI_RAG_MAX_SCAN_ROWS', 50000),
+
+        /**
          * Auto-index arbitrary Eloquent models into RAG on save/delete — the
          * Laravel equivalent of the WordPress plugin's "Ask This Site". Empty
          * by default (opt-in): indexing nothing until you list a model here
@@ -136,7 +150,48 @@ return [
         'max_message_length' => (int) env('AI_CHAT_MAX_MESSAGE_LENGTH', 4000),
         'context_messages'   => (int) env('AI_CHAT_CONTEXT_MESSAGES', 10),
         'disable_storage'    => (bool) env('AI_CHAT_DISABLE_STORAGE', false),
+
+        // How many of a user's most recent sessions/projects the sidebar
+        // loads at once — without this, a long-time user's entire history
+        // (potentially thousands of rows) gets fetched and rendered on
+        // every single page load. The client-side sidebar search only
+        // searches what's loaded, so raise this if you need deep history
+        // search rather than just recency.
+        'sidebar_limit'      => (int) env('AI_CHAT_SIDEBAR_LIMIT', 100),
         'show_internal_errors' => env('AI_CHAT_SHOW_INTERNAL_ERRORS'), // null = fall back to app.debug
+
+        /**
+         * How LaravelAI figures out "who is chatting", beyond the default.
+         * Out of the box it calls $request->user() — the standard Laravel
+         * session guard — which is all classic server-rendered apps need.
+         *
+         * That default resolves to nobody for an entire class of real,
+         * common apps: a Vue/React SPA whose API is guarded by a Sanctum
+         * or Passport *Bearer token* kept in the SPA's own JS state
+         * (localStorage, a Pinia/Redux store, etc.), never in a Laravel
+         * session. A plain browser navigation to /ai-chat — a normal
+         * server-rendered page — never attaches that token, so the
+         * default check sees a guest even for a genuinely logged-in user.
+         * Confirmed live on exactly that kind of install: every /ai-chat
+         * session showed user_id = NULL despite the user being signed in
+         * to the SPA the whole time.
+         *
+         * Two ways to fix that, and this config is the second, generic one
+         * (the first — bridging the SPA's Bearer token into a real Laravel
+         * session on your own /api/session-bridge-style endpoint before
+         * navigating to /ai-chat — works too, and is what the README's
+         * Troubleshooting section walks through). If you'd rather not
+         * stand up a session bridge at all, bind a resolver here instead:
+         * it's called with the current Request and must return an
+         * authenticated user id (or null for "not signed in"), so you can
+         * check whatever your app actually uses — a different guard, a
+         * signed query-string token, a custom header, anything:
+         *
+         *   'identity_resolver' => fn ($request) => $request->user('sanctum')?->id,
+         *
+         * null (default) = just use $request->user().
+         */
+        'identity_resolver' => null,
 
         // Extra middleware for the whole /ai-chat area — empty (public
         // page) by default. Set AI_CHAT_MIDDLEWARE=auth to require login

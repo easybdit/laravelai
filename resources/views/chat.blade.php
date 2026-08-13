@@ -89,6 +89,11 @@
         .sidebar-footer a { color: #4a5568; text-decoration: none; }
         .sidebar-footer a:hover { color: var(--accent); }
 
+        .sidebar-identity { display: flex; align-items: center; gap: 6px; padding: 10px 14px; border-top: 1px solid var(--sidebar-border); font-size: 0.72rem; color: #8a94a6; cursor: default; }
+        .identity-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+        .identity-dot--user { background: #22c55e; }
+        .identity-dot--guest { background: #f59e0b; }
+
         /* ── MAIN ── */
         .main { flex: 1; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
         body.chat-fullscreen .sidebar { display: none; }
@@ -367,6 +372,20 @@
             </a>
             @endforeach
         </div>
+    </div>
+
+    @php
+        $identifiedUserId   = $identifiedUserId ?? null;
+        $identifiedUserName = $identifiedUserName ?? null;
+    @endphp
+    <div class="sidebar-identity" title="{{ $identifiedUserId ? 'Chat history is tied to your account.' : 'Chat history is tied to a guest cookie in this browser only — sign in to keep it across devices.' }}">
+        @if($identifiedUserId)
+            <span class="identity-dot identity-dot--user"></span>
+            {{ $identifiedUserName ?: ('User #' . $identifiedUserId) }}
+        @else
+            <span class="identity-dot identity-dot--guest"></span>
+            Guest session
+        @endif
     </div>
 
     <div class="sidebar-footer">

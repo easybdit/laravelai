@@ -82,12 +82,22 @@ class AIChatController extends Controller
     public function index(Request $request)
     {
         [$userId, $guestToken] = ChatIdentity::resolve($request);
+        $sidebarLimit = max(1, (int) config('ai.chat.sidebar_limit', 100));
 
+        // Sessions and projects both stop at $sidebarLimit rather than
+        // loading a user's entire history unbounded on every page view —
+        // for a long-time user that could mean thousands of rows fetched
+        // and rendered on every single visit. The sidebar's client-side
+        // search only searches what's actually loaded, so raise
+        // AI_CHAT_SIDEBAR_LIMIT if you need deeper history search.
         $sessionsQuery = ChatSession::with('project');
         $this->scopeToIdentity($sessionsQuery, $userId, $guestToken);
-        $sessions = $sessionsQuery->latest()->get();
+        $sessions = $sessionsQuery->latest()->limit($sidebarLimit)->get();
 
-        $projects      = Project::withCount('files')->latest()->get();
+        $projectsQuery = Project::withCount('files');
+        $this->scopeToIdentity($projectsQuery, $userId, $guestToken);
+        $projects = $projectsQuery->latest()->limit($sidebarLimit)->get();
+
         $activeSession = null;
         $messages      = collect();
 
@@ -111,6 +121,8 @@ class AIChatController extends Controller
             'captchaEnabled'      => (bool) config('ai.chat.captcha.enabled', false),
             'attachmentsEnabled'  => (bool) config('ai.chat.attachments.enabled', false),
             'disableStorage'      => (bool) config('ai.chat.disable_storage', false),
+            'identifiedUserId'    => $userId,
+            'identifiedUserName'  => ChatIdentity::resolveDisplayName($request),
             'canManageSettings'   => $request->user()
                 && \Illuminate\Support\Facades\Gate::forUser($request->user())
                     ->allows(config('ai.chat.settings_gate', 'manage-ai-settings')),

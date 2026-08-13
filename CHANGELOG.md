@@ -1,5 +1,28 @@
 # Changelog
 
+## v2.2.0 — 2026-08-14
+
+### 🔌 Pluggable identity resolution — for SPAs that don't use Laravel sessions
+
+`/ai-chat` is a normal server-rendered page, so it always identified the current visitor with Laravel's standard `$request->user()` session check. That's correct for classic apps, but resolves to nobody for a real, common architecture: a Vue/React SPA whose API auth is a **Bearer token kept in the SPA's own JS state** (Sanctum/Passport personal access tokens in `localStorage`, a Pinia/Redux store, etc.) rather than a Laravel session. A plain browser navigation to `/ai-chat` never carries that token — found live on exactly this setup, every session showed `user_id = NULL` the entire time the user was genuinely signed in to the SPA.
+
+- New `config('ai.chat.identity_resolver')` — an optional callable, `fn ($request) => $userId`, called instead of the default `$request->user()` check. Lets any app plug in whatever it actually uses: a different guard, a signed token, a custom header. A resolver that throws degrades to "guest" rather than breaking the chat request.
+- New **sidebar identity indicator** — a small dot + label at the bottom of the chat sidebar showing "Signed in as {name}" (green) or "Guest session" (amber), so a misconfigured identity check is visible immediately instead of silently losing chat history. Falls back to "User #{id}" when a custom resolver is used (it only returns an id, not a display name).
+- New Troubleshooting entry documents both fixes for the "sidebar says Guest even though I'm logged in" symptom — the resolver above, or bridging your SPA's Bearer token into a real Laravel session on a small `/api/session-bridge`-style endpoint (recipe included) — whichever fits your app.
+
+### 🔒 Fixed: Projects had no owner at all
+
+Found in the same audit: `Project::index()` returned *every* project on the install to *every* visitor — no scoping, ever. `destroy()` and every `ProjectFileController` action (list/upload/delete/reprocess files) had the same gap: any anonymous visitor could read, modify, or delete any project on a default (no-auth) install, including its uploaded documents. Zero test coverage existed for Projects at all, which is exactly how this went unnoticed.
+
+- `projects` gets the same identity columns `chat_sessions` already had (`user_id`, `guest_token`, both indexed) via a new additive migration — a project with no recorded identity (created before this migration) stays visible to everyone, same upgrade-safety rule used everywhere else in this package.
+- `ProjectController` and `ProjectFileController` now resolve and enforce ownership on every action, reusing the exact same `ChatIdentity`-based pattern as chat sessions.
+- The RAG `testQuery()` admin tool now checks ownership too when targeting a specific project's source — previously any visitor could inspect any project's ingested document contents through this endpoint alone.
+- `index()` on both projects and chat sessions now stops at `config('ai.chat.sidebar_limit')` (default 100, same setting) instead of loading a user's *entire* history unbounded on every single page view.
+
+11 new tests (4 identity-resolver + 7 project-ownership) — 97/97 passing overall.
+
+---
+
 ## v2.1.2 — 2026-08-14
 
 ### 🐛 Fixed: guest chat history never persisted (reapplied)

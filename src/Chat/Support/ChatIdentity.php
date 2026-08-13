@@ -22,10 +22,10 @@ class ChatIdentity
      */
     public static function resolve(Request $request): array
     {
-        $userId = $request->user()?->getAuthIdentifier();
+        $userId = self::resolveUserId($request);
 
         if ($userId) {
-            return [(int) $userId, null];
+            return [$userId, null];
         }
 
         if (!config('ai.chat.access.allow_guest', true)) {
@@ -44,6 +44,62 @@ class ChatIdentity
         }
 
         return [null, $token];
+    }
+
+    /**
+     * The default identity check ($request->user()) is only correct for
+     * classic session-based auth. Apps whose /ai-chat visitor is never
+     * carrying a Laravel session at all (a Bearer-token SPA is the common
+     * case — see the identity_resolver docblock in config/ai.php) can bind
+     * their own resolver instead; a resolver that throws or misbehaves
+     * degrades to "guest" rather than breaking the whole chat request.
+     */
+    private static function resolveUserId(Request $request): ?int
+    {
+        $resolver = config('ai.chat.identity_resolver');
+
+        if (!$resolver || !is_callable($resolver)) {
+            return $request->user()?->getAuthIdentifier()
+                ? (int) $request->user()->getAuthIdentifier()
+                : null;
+        }
+
+        try {
+            $resolved = $resolver($request);
+        } catch (\Throwable) {
+            return null;
+        }
+
+        return $resolved !== null && $resolved !== '' ? (int) $resolved : null;
+    }
+
+    /**
+     * Best-effort display name for the currently identified user — purely
+     * cosmetic (the chat sidebar's "signed in as ..." line), never used for
+     * anything security-sensitive. Only meaningful on the default
+     * $request->user() path, since a custom identity_resolver only ever
+     * hands back an id, not a model — falls back to null there, and the
+     * view shows "user #<id>" instead, still better than showing nothing.
+     */
+    public static function resolveDisplayName(Request $request): ?string
+    {
+        if (config('ai.chat.identity_resolver')) {
+            return null;
+        }
+
+        $user = $request->user();
+        if (!$user) {
+            return null;
+        }
+
+        foreach (['name', 'full_name', 'username', 'email'] as $attr) {
+            $value = $user->{$attr} ?? null;
+            if (is_string($value) && $value !== '') {
+                return $value;
+            }
+        }
+
+        return null;
     }
 
     /**

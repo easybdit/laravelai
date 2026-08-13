@@ -52,4 +52,49 @@ class ChatIdentityTest extends TestCase
         $this->assertNull($userId);
         $this->assertNull($resolvedToken);
     }
+
+    /**
+     * The default $request->user() check only works for classic
+     * session-based auth. Apps whose /ai-chat visitor never carries a
+     * Laravel session at all — a Bearer-token SPA is the common real
+     * case, confirmed live: every session showed user_id = NULL despite
+     * the user being genuinely signed in to the SPA — need to plug in
+     * their own resolution logic instead.
+     */
+    public function test_a_custom_identity_resolver_overrides_the_default_user_check(): void
+    {
+        config(['ai.chat.identity_resolver' => fn ($request) => 42]);
+
+        [$userId, $guestToken] = ChatIdentity::resolve(Request::create('/'));
+
+        $this->assertSame(42, $userId);
+        $this->assertNull($guestToken, 'A resolved user id should never also carry a guest token.');
+    }
+
+    public function test_a_custom_identity_resolver_returning_null_falls_back_to_guest(): void
+    {
+        config(['ai.chat.identity_resolver' => fn ($request) => null]);
+
+        [$userId] = ChatIdentity::resolve(Request::create('/'));
+
+        $this->assertNull($userId);
+    }
+
+    public function test_a_throwing_identity_resolver_degrades_to_guest_rather_than_crashing(): void
+    {
+        config(['ai.chat.identity_resolver' => function () {
+            throw new \RuntimeException('host app resolver blew up');
+        }]);
+
+        [$userId] = ChatIdentity::resolve(Request::create('/'));
+
+        $this->assertNull($userId, 'A misbehaving host resolver must degrade to guest, not break the whole chat request.');
+    }
+
+    public function test_resolve_display_name_returns_null_when_a_custom_resolver_is_configured(): void
+    {
+        config(['ai.chat.identity_resolver' => fn ($request) => 1]);
+
+        $this->assertNull(ChatIdentity::resolveDisplayName(Request::create('/')));
+    }
 }

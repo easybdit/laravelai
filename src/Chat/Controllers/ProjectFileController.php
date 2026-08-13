@@ -4,6 +4,7 @@ namespace EasyAI\LaravelAI\Chat\Controllers;
 
 use EasyAI\LaravelAI\Chat\Models\Project;
 use EasyAI\LaravelAI\Chat\Models\ProjectFile;
+use EasyAI\LaravelAI\Chat\Support\ChatIdentity;
 use EasyAI\LaravelAI\Chat\Support\TextExtractor;
 use EasyAI\LaravelAI\Facades\AI;
 use Illuminate\Http\Request;
@@ -13,15 +14,33 @@ use Illuminate\Support\Facades\Storage;
 
 class ProjectFileController extends Controller
 {
+    /**
+     * Every action here operates on a specific project's files, so every
+     * action needs the same ownership check — findOrFail() alone (the
+     * previous behavior) let any visitor read/upload/delete files for
+     * *any* project on the install, same gap ProjectController had.
+     */
+    private function findOwnedProject(Request $request, $project): Project
+    {
+        [$userId, $guestToken] = ChatIdentity::resolve($request);
+
+        $proj = Project::findOrFail($project);
+        if (!$proj->isOwnedBy($userId, $guestToken)) {
+            abort(403);
+        }
+
+        return $proj;
+    }
+
     public function index(Request $request, $project)
     {
-        $proj = Project::findOrFail($project);
+        $proj = $this->findOwnedProject($request, $project);
         return response()->json($proj->files()->latest()->get());
     }
 
     public function store(Request $request, $project)
     {
-        $proj = Project::findOrFail($project);
+        $proj = $this->findOwnedProject($request, $project);
 
         $request->validate([
             'file' => 'required|file|mimes:txt,md,pdf|max:10240',
@@ -73,7 +92,9 @@ class ProjectFileController extends Controller
 
     public function destroy(Request $request, $project, $file)
     {
-        $pf = ProjectFile::findOrFail($file);
+        $proj = $this->findOwnedProject($request, $project);
+        $pf   = ProjectFile::where('project_id', $proj->id)->findOrFail($file);
+
         Storage::disk('local')->delete($pf->stored_path);
         $pf->delete();
         return response()->json(['ok' => true]);
@@ -85,8 +106,8 @@ class ProjectFileController extends Controller
      */
     public function reprocess(Request $request, $project, $file)
     {
-        $proj = Project::findOrFail($project);
-        $pf   = ProjectFile::where('project_id', $proj->id)->findOrFail($file);
+        $proj   = $this->findOwnedProject($request, $project);
+        $pf     = ProjectFile::where('project_id', $proj->id)->findOrFail($file);
         $source = 'project_' . $proj->id;
 
         try {

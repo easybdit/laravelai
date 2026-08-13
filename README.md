@@ -918,6 +918,42 @@ Route::fallback(fn () => view('app'));
 
 This is common in SPA setups (Vue/React front ends living inside a Laravel app) where a wildcard route serves the SPA shell for client-side routing.
 
+### The chat sidebar says "Guest session" even though I'm logged in
+
+**Symptom:** the sidebar's identity line (bottom of the sidebar) shows a yellow dot and "Guest session," chat history isn't tied to your account, and `/ai-chat/settings` refuses you with a 403 even as an admin — all while you're genuinely signed in elsewhere in the same app.
+
+**Cause:** `/ai-chat` is a normal server-rendered page. LaravelAI figures out who's chatting by calling `$request->user()` — Laravel's standard session-based check. That's correct for classic apps, but it resolves to nobody for a real and common architecture: a Vue/React SPA whose API auth is a **Bearer token kept in the SPA's own JS state** (`localStorage`, a Pinia/Redux store, Sanctum/Passport personal access tokens) rather than a Laravel session. A plain browser navigation to `/ai-chat` never attaches that token — nothing about a full-page `<a href>` visit runs your SPA's axios interceptor — so the request is genuinely anonymous as far as Laravel is concerned, no matter how logged-in you are in the SPA itself. Confirmed live on exactly this setup: every `/ai-chat` session showed `user_id = NULL` the whole time the user was signed in.
+
+Two ways to fix it, pick whichever fits your app:
+
+**Option A — bridge your SPA's token into a real session** (closest to "just make it work exactly like the rest of my app"). Add one endpoint your SPA calls (with its existing Bearer token) right before it links to `/ai-chat`:
+
+```php
+// routes/api.php, inside your existing auth:sanctum group
+Route::post('/session-bridge', function (Request $request) {
+    Auth::guard('web')->login($request->user());
+    $request->session()->regenerate();
+    return response()->json(['ok' => true]);
+});
+```
+
+```js
+// before navigating to /ai-chat
+await api.post('/session-bridge')
+window.location.href = '/ai-chat'
+```
+
+**Option B — plug in your own identity check**, no session bridge needed. `config('ai.chat.identity_resolver')` is called with the current `Request` and returns a user id (or `null` for guest) — check whatever your app actually uses:
+
+```php
+// config/ai.php
+'chat' => [
+    'identity_resolver' => fn ($request) => $request->user('sanctum')?->id,
+],
+```
+
+Either way, the sidebar's identity line and the Settings page's Gate (`manage-ai-settings` — also fail-closed until you define it, same pattern as everywhere else in this package) will pick up the resolved identity automatically. Option A also fixes `$request->user()` everywhere else on `/ai-chat`, not just chat ownership — the safer default if you're not sure which you need.
+
 ---
 
 ## 🗺️ Roadmap
