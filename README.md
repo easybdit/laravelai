@@ -6,7 +6,7 @@
 
 <p align="center">
   <strong>One interface, any AI.</strong><br>
-  Unified AI chat for Laravel — Ollama, OpenAI (ChatGPT), Anthropic (Claude), DeepSeek
+  Unified AI chat for Laravel — Ollama, OpenAI (ChatGPT), Anthropic (Claude), DeepSeek, Gemini, Together AI, or any OpenAI-compatible endpoint.
 </p>
 
 <p align="center">
@@ -22,16 +22,15 @@
 </p>
 
 <p align="center">
-  <a href="#-quick-start">Quick Start</a> •
+  <a href="#-get-started-in-5-minutes">Get Started</a> •
+  <a href="#-confirm-its-actually-working">Verify It Works</a> •
+  <a href="#-troubleshooting">Troubleshooting</a> •
   <a href="#-built-in-chat-ui">Chat UI</a> •
   <a href="#-projects--knowledge-bases">Projects</a> •
-  <a href="#-rag-built-in">RAG</a> •
   <a href="#-security--trust">Security</a> •
-  <a href="#-chat-ux--personalization">UX &amp; Widget</a> •
   <a href="#-commerce-assistants-schema-agnostic">Commerce</a> •
   <a href="#-providers">Providers</a> •
-  <a href="#-api-reference">API Reference</a> •
-  <a href="#%EF%B8%8F-configuration">Configuration</a>
+  <a href="#-api-reference">API Reference</a>
 </p>
 
 <p align="center">
@@ -42,39 +41,9 @@
 
 ---
 
-## 📺 Video Tutorials
-
-<table>
-  <tr>
-    <td align="center" width="33%">
-      <a href="https://youtu.be/m_HyTIBRAOE">
-        <img src="https://img.youtube.com/vi/m_HyTIBRAOE/hqdefault.jpg" width="100%" alt="Self-Hosted AI Server"><br>
-        <b>🖥️ Self-Hosted AI Server</b>
-      </a>
-      <br><sub>Set up your own local AI server with Ollama</sub>
-    </td>
-    <td align="center" width="33%">
-      <a href="https://youtu.be/pSwewtXqgP8">
-        <img src="https://img.youtube.com/vi/pSwewtXqgP8/hqdefault.jpg" width="100%" alt="Laravel AI Package"><br>
-        <b>🚀 Laravel AI Package Setup</b>
-      </a>
-      <br><sub>Install and use LaravelAI in your project</sub>
-    </td>
-    <td align="center" width="33%">
-      <a href="https://youtu.be/pSwewtXqgP8">
-        <img src="https://img.youtube.com/vi/pSwewtXqgP8/hqdefault.jpg" width="100%" alt="Built-in Chat UI"><br>
-        <b>💬 Built-in Chat UI</b>
-      </a>
-      <br><sub>Zero-setup ChatGPT-like app included</sub>
-    </td>
-  </tr>
-</table>
-
----
-
 ## Why LaravelAI?
 
-Building AI features in Laravel normally means separate SDKs, different formats, and custom error handling for every provider. **LaravelAI eliminates all of that.**
+Building AI features in Laravel normally means separate SDKs, different formats, and custom error handling for every provider. **LaravelAI eliminates all of that** — and unlike most "unified AI" packages, it doesn't stop at an SDK: you get a working chat app, not just a `chat()` method.
 
 ```php
 // Same code. Any provider. Just change the name.
@@ -88,28 +57,34 @@ Built on **Laravel's driver pattern** — same architecture as Mail, Cache, and 
 
 ---
 
-## 📦 Installation
+## 🚀 Get Started in 5 Minutes
 
-**Step 1:** Install via Composer
+Every step below matters — skipping #2 or #3 is by far the most common reason people get stuck, so don't skip ahead.
+
+**1. Install**
 
 ```bash
 composer require easybdit/laraveleasyai
 ```
 
-**Step 2:** Publish config and assets
+**2. Publish everything and migrate** — all three commands, every time:
 
 ```bash
 php artisan vendor:publish --tag=ai-config
 php artisan vendor:publish --tag=ai-chat-assets
-```
-
-**Step 3:** Run migrations
-
-```bash
 php artisan migrate
 ```
 
-**Step 4:** Add to `.env`
+**3. Pick *one* provider and add it to `.env`**
+
+Fastest path — just an API key, nothing to install or run:
+
+```env
+AI_PROVIDER=openai
+AI_OPENAI_KEY=sk-your-api-key
+```
+
+Or, 100% free and self-hosted (needs [Ollama](https://ollama.com) running locally first):
 
 ```env
 AI_PROVIDER=ollama
@@ -117,7 +92,33 @@ AI_OLLAMA_URL=http://127.0.0.1:11434
 AI_OLLAMA_MODEL=qwen2:1.5b
 ```
 
-**Step 5:** Visit `/ai-chat` in your browser ✅
+Anthropic, DeepSeek, Gemini, Together AI, and any OpenAI-compatible endpoint (LM Studio, vLLM, OpenRouter...) all work the same way — see [Providers](#-providers).
+
+**4. Building a Vue/React SPA with a Laravel backend?** Read this before moving on — it's the single most common integration snag:
+
+> If `routes/web.php` has a catch-all route like `Route::get('/{any}', fn () => view('app'))->where('any', '.*')`, change it to **`Route::fallback(fn () => view('app'))`** instead. A plain wildcard route can register *before* this package's routes and silently swallow `/ai-chat/*` — `Route::fallback()` is Laravel's purpose-built fix: it's only ever tried after every other route fails to match, so it can never shadow anything. Full explanation in [Troubleshooting](#-troubleshooting) if you hit this.
+
+**5. Visit `/ai-chat`** — you should see a ChatGPT-style app, sidebar and all. ✅
+
+### Try it in code instead
+
+```php
+use EasyAI\LaravelAI\Facades\AI;
+
+$response = AI::chat([['role' => 'user', 'content' => 'What is Laravel?']]);
+echo $response->content;
+
+// or the one-liner helper
+echo ai('What is Laravel?');
+```
+
+```bash
+php artisan tinker
+>>> AI::provider()->health()
+=> true
+>>> ai('Say hello in 3 words')
+=> "Hello there, friend!"
+```
 
 ### Requirements
 
@@ -128,36 +129,79 @@ AI_OLLAMA_MODEL=qwen2:1.5b
 
 ---
 
-## 🚀 Quick Start
+## ✅ Confirm It's Actually Working
+
+Run through this after install — takes about 30 seconds and catches every real issue people hit:
+
+| Check | How | Expect to see |
+|---|---|---|
+| Routes are registered | `php artisan route:list --name=ai-chat` | A list of ~19 routes |
+| Migrations ran | `php artisan migrate:status` | Every `laraveleasyai` migration says `Ran` — none `Pending` |
+| Assets are published | Check `public/vendor/laravelai/css/` exists | Files present |
+| A provider is configured | `php artisan tinker` → `AI::provider()->health()` | `true` |
+| Package routes aren't shadowed | Visit `/ai-chat/api/captcha` directly in your browser | Raw JSON like `{"question":"3 + 5",...}` — **not** your app's normal page |
+
+Anything not matching? Jump straight to the matching entry below.
+
+---
+
+## 🧯 Troubleshooting
+
+### `/ai-chat` shows my app's own frontend instead of the chat UI (or an API endpoint returns HTML instead of JSON)
+
+Your app has a catch-all route ahead of this package's routes in the matching order — almost always a Vue/React SPA fallback like:
 
 ```php
-use EasyAI\LaravelAI\Facades\AI;
-
-$response = AI::chat([['role' => 'user', 'content' => 'What is Laravel?']]);
-echo $response->content;
+Route::get('/{any}', fn () => view('app'))->where('any', '.*');
 ```
 
-### One-Liner Helper
+Routes are matched in registration order. Depending on your app, this wildcard can be registered *before* the package's routes get added by its service provider — so it wins the match for `/ai-chat` (and every route under it, including the JSON API endpoints) before this package's own route is ever tried.
+
+**Fix** — swap it for `Route::fallback()`, Laravel's purpose-built mechanism for exactly this case: it's only ever tried after every other registered route fails to match, so it can't shadow anything regardless of provider boot order.
 
 ```php
-$answer = ai('What is Laravel?');
+// Before — a wildcard that can shadow package routes
+Route::get('/{any}', fn () => view('app'))->where('any', '.*');
+
+// After — only matches when nothing else did
+Route::fallback(fn () => view('app'));
 ```
 
-### Test in Tinker
+### The page loads but has no styling, broken images, or the console shows 404s for `.js`/`.css` files
 
-```bash
-php artisan tinker
->>> AI::provider('ollama')->health()
-=> true
->>> ai('Say hello in 3 words')
-=> "Hello there, friend!"
-```
+You skipped `php artisan vendor:publish --tag=ai-chat-assets`. Run it, then hard-refresh (Ctrl+Shift+R).
+
+### `/ai-chat` throws a 500 error, or a SQL error mentioning `chat_sessions` / `ai_documents` / `ai_projects`
+
+You skipped `php artisan migrate`. Run it — `php artisan migrate:status` will confirm which migrations are still `Pending`.
+
+### The page loads fine, but sending a message does nothing, times out, or shows "temporarily unavailable"
+
+No AI provider is reachable:
+
+- **Cloud providers** (OpenAI, Anthropic, DeepSeek, Gemini, Together): double-check `AI_*_KEY` in `.env` is set and correct.
+- **Ollama**: confirm it's actually running — `curl http://127.0.0.1:11434` should respond, not hang or refuse.
+- Run `AI::provider()->health()` in `php artisan tinker` to test the currently-configured default provider directly.
+- Non-admin visitors only ever see a generic "temporarily unavailable" message, by design (see [Security & Trust](#-security--trust)) — set `AI_CHAT_SHOW_INTERNAL_ERRORS=true` temporarily to see the real error while debugging.
+
+### "You must be logged in to use this chat"
+
+Either `AI_CHAT_ACCESS_RESTRICTION` is set to something other than `everyone`, or `AI_CHAT_ALLOW_GUEST=false` — check both.
+
+### A commerce endpoint (`/ai-chat/api/commerce/*`) always returns `501` or `403`
+
+- **`501`** — you haven't bound the matching resolver interface yet. See [Commerce Assistants](#-commerce-assistants-schema-agnostic).
+- **`403`** on the Store Assistant specifically — it's fail-closed by design; you must define `Gate::define('view-store-assistant', ...)` yourself in `AppServiceProvider`.
+
+### Still stuck?
+
+[Open an issue](https://github.com/easybdit/laraveleasyai/issues) with the output of the checklist above — that alone usually points straight at the cause.
 
 ---
 
 ## 💬 Built-in Chat UI
 
-> **New in v1.3.0** — A full ChatGPT-like chat app included. Zero setup required.
+A full ChatGPT-like chat app, included — zero frontend work required.
 
 ### What you get out of the box
 
@@ -167,15 +211,15 @@ php artisan tinker
 | ⚡ Streaming | Real-time typing effect |
 | 📝 Markdown | Full rendering with syntax-highlighted code |
 | 📋 Copy buttons | Per message and per code block |
-| 🔄 Provider switcher | Switch Ollama / OpenAI / Claude / DeepSeek live |
+| 🔄 Provider switcher | Switch providers live |
 | 💾 DB persistence | History survives page refresh |
 | 🏷️ Auto-title | First message becomes session title |
-| 📁 Projects | RAG-powered knowledge bases (v1.4.0) |
+| 📁 Projects | RAG-powered knowledge bases |
 | 📦 Offline assets | No CDN dependency |
-| 🔒 Security suite | Rate limiting, access control, captcha, GDPR gate (v2.0.0) |
-| 📎 Attachments | Vision + document uploads mid-chat (v2.0.0) |
-| 🧩 Floating widget | `<x-laravelai::widget />` — embeddable anywhere (v2.0.0) |
-| 📊 Analytics | Usage dashboard, zero external tracking (v2.0.0) |
+| 🔒 Security suite | Rate limiting, access control, captcha, GDPR gate |
+| 📎 Attachments | Vision + document uploads mid-chat |
+| 🧩 Floating widget | `<x-laravelai::widget />` — embeddable anywhere |
+| 📊 Analytics | Usage dashboard, zero external tracking |
 
 ### Customize the view
 
@@ -208,13 +252,13 @@ php artisan vendor:publish --tag=ai-chat-views
 | DELETE | `/ai-chat/api/projects/{id}/files/{fid}` | Delete file |
 | POST   | `/ai-chat/api/rag/test` | Inspect matched chunks for a query |
 
-> `/ai-chat/api/stream` moved from GET to POST in v2.0.0 — a 4000-character message no longer risks the URL length limit, and the built-in view reads the response via `fetch()` + a manual SSE parser (not `EventSource`) so blocked/rate-limited JSON error responses are actually readable.
+> `/ai-chat/api/stream` is a POST, not GET-with-a-query-string — a long message doesn't risk hitting a URL length limit, and the built-in view reads the response via `fetch()` + a manual SSE parser (not `EventSource`) so blocked/rate-limited JSON error responses are actually readable.
 
 ---
 
 ## 🗂️ Projects & Knowledge Bases
 
-> **New in v1.4.0** — Self-hosted Claude-like Projects. Create knowledge bases, upload documents, and get RAG-powered answers scoped per project.
+Self-hosted Claude-like Projects. Create knowledge bases, upload documents, and get RAG-powered answers scoped per project.
 
 ### How it works
 
@@ -298,8 +342,6 @@ php artisan ai:rag:ingest storage/docs/ --flush
 
 ### Accurate counting, test queries, reprocessing
 
-> **New in v2.0.0**
-
 ```php
 // Full-corpus keyword scan for "how many X" questions — top-K semantic
 // search alone under-counts when relevant chunks rank outside K.
@@ -345,7 +387,7 @@ Chat sessions with no project attached automatically pull context from every aut
 
 ## 🔒 Security & Trust
 
-> **New in v2.0.0** — everything below is config/env-driven (`config/ai.php` → `chat`); there's no settings database or admin panel, by design — your app already has its own way to manage config.
+Everything below is config/env-driven (`config/ai.php` → `chat`); there's no settings database or admin panel, by design — your app already has its own way to manage config.
 
 | Setting | `.env` key | Default |
 |---|---|---|
@@ -367,8 +409,6 @@ Chat sessions with no project attached automatically pull context from every aut
 Internal exception detail (e.g. "No API key configured for OpenAI") is only shown to callers who pass the same gate — everyone else gets a generic "temporarily unavailable" message. Set `AI_CHAT_SHOW_INTERNAL_ERRORS=true` to always show real errors (e.g. in a staging environment).
 
 ## 💬 Chat UX & Personalization
-
-> **New in v2.0.0**
 
 Stop & regenerate, message timestamps, per-message and whole-conversation export, read-aloud (browser `SpeechSynthesis`), voice input (browser `SpeechRecognition` — Chrome/Edge/Safari), fullscreen mode, 👍/👎 feedback, and client-side session search all ship in the default `resources/views/chat.blade.php` — no configuration needed, some gated by `AI_CHAT_VOICE_INPUT_ENABLED` / `AI_CHAT_TTS_ENABLED` / `AI_CHAT_EXPORT_ENABLED`.
 
@@ -411,7 +451,7 @@ A self-contained launcher + chat panel — talks to the same session/stream API,
 
 ## 📎 Attachments & Vision
 
-> **New in v2.0.0** — `AI_CHAT_ATTACHMENTS_ENABLED=true`
+`AI_CHAT_ATTACHMENTS_ENABLED=true`
 
 Upload images and documents (`.txt`/`.md`/`.pdf`) mid-chat. Documents are text-extracted and appended as context for **every** provider; images become real vision input for OpenAI, Anthropic, and Gemini (via a universal multipart message format translated per-provider), with a "this provider can't view images" fallback note for everyone else.
 
@@ -428,7 +468,7 @@ Fires a best-effort POST after every AI response with `session_id`, `user_messag
 
 ## 🛒 Commerce Assistants (schema-agnostic)
 
-> **New in v2.0.0** — safe to install on *any* site, including ones with an existing e-commerce setup: this feature creates **zero database tables** and assumes **no particular catalog/order shape**. It only knows three PHP interfaces; you bind your own implementation against whatever your store actually is — WooCommerce, Shopify's API, a hand-rolled Eloquent catalog, your own Vue/Laravel storefront, anything.
+Safe to install on *any* site, including ones with an existing e-commerce setup: this feature creates **zero database tables** and assumes **no particular catalog/order shape**. It only knows three PHP interfaces; you bind your own implementation against whatever your store actually is — WooCommerce, Shopify's API, a hand-rolled Eloquent catalog, your own Vue/Laravel storefront, anything.
 
 ```php
 // In your app's AppServiceProvider (or any provider) — bind only the ones you need:
@@ -763,7 +803,7 @@ AI_RAG_TABLE=ai_documents
 # RAG for small models — reduce chunk size and limit context
 # AI_OLLAMA_NUM_CTX=2048
 
-# Security & Trust (v2.0.0) — see the Security & Trust section above for the full list
+# Security & Trust — see the Security & Trust section above for the full list
 AI_CHAT_RATE_LIMIT_ENABLED=true
 AI_CHAT_RATE_LIMIT_MAX=20
 AI_CHAT_RATE_LIMIT_WINDOW=60
@@ -773,14 +813,14 @@ AI_CHAT_CAPTCHA_ENABLED=false
 AI_CHAT_GDPR_GATE_ENABLED=false
 AI_CHAT_MAX_MESSAGE_LENGTH=4000
 
-# Chat UX & personalization (v2.0.0)
+# Chat UX & personalization
 AI_CHAT_WELCOME_ENABLED=false
 AI_CHAT_VOICE_INPUT_ENABLED=true
 AI_CHAT_TTS_ENABLED=true
 AI_CHAT_EXPORT_ENABLED=true
 AI_CHAT_ATTACHMENTS_ENABLED=false
 
-# Webhook (v2.0.0)
+# Webhook
 AI_CHAT_WEBHOOK_URL=
 AI_CHAT_WEBHOOK_SECRET=
 ```
