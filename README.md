@@ -28,6 +28,7 @@
   <a href="#-rag-built-in">RAG</a> •
   <a href="#-security--trust">Security</a> •
   <a href="#-chat-ux--personalization">UX &amp; Widget</a> •
+  <a href="#-commerce-assistants-schema-agnostic">Commerce</a> •
   <a href="#-providers">Providers</a> •
   <a href="#-api-reference">API Reference</a> •
   <a href="#%EF%B8%8F-configuration">Configuration</a>
@@ -425,6 +426,51 @@ AI_CHAT_WEBHOOK_SECRET=optional-hmac-secret
 
 Fires a best-effort POST after every AI response with `session_id`, `user_message`, `ai_response`, `provider`, `timestamp` — and an `X-LaravelAI-Signature: sha256=...` header when a secret is set. Compatible with Zapier, Make, n8n, or any HTTP endpoint.
 
+## 🛒 Commerce Assistants (schema-agnostic)
+
+> **New in v2.0.0** — safe to install on *any* site, including ones with an existing e-commerce setup: this feature creates **zero database tables** and assumes **no particular catalog/order shape**. It only knows three PHP interfaces; you bind your own implementation against whatever your store actually is — WooCommerce, Shopify's API, a hand-rolled Eloquent catalog, your own Vue/Laravel storefront, anything.
+
+```php
+// In your app's AppServiceProvider (or any provider) — bind only the ones you need:
+use EasyAI\LaravelAI\Commerce\Contracts\{ProductResolver, OrderResolver, StoreAnalyticsResolver};
+
+public function register(): void
+{
+    $this->app->bind(ProductResolver::class, \App\Services\MyProductResolver::class);
+    $this->app->bind(OrderResolver::class, \App\Services\MyOrderResolver::class);
+    $this->app->bind(StoreAnalyticsResolver::class, \App\Services\MyStoreAnalytics::class);
+}
+```
+
+Any endpoint whose resolver isn't bound returns a clear `501` — nothing breaks, nothing silently no-ops.
+
+| Assistant | Endpoint | Needs | Notes |
+|---|---|---|---|
+| **Ask Your Store** | `POST /ai-chat/api/commerce/store-assistant` | `StoreAnalyticsResolver` | Admin-only NL → revenue/orders/top-products/low-stock/new-customers. **Fail-closed**: refused unless you `Gate::define('view-store-assistant', ...)` yourself. |
+| **Product Q&A / Finder** | `POST /ai-chat/api/commerce/products/ask` | `ProductResolver` | "red dress under $50" → search criteria extracted by the AI, executed by your resolver, returned as `{reply, products}`. |
+| **Order Status** | `POST /ai-chat/api/commerce/orders/ask` | `OrderResolver` | Guests must supply `order_number` + `email`, verified inside your resolver — never trusted from the request. Logged-in users are scoped to their own `user()->id`. |
+
+Each interface (`src/Commerce/Contracts/`) documents its exact expected array shape. Example `ProductResolver`:
+
+```php
+class MyProductResolver implements ProductResolver
+{
+    public function search(array $criteria): array
+    {
+        return Product::query()
+            ->when($criteria['keyword']   ?? null, fn ($q, $k) => $q->where('name', 'like', "%{$k}%"))
+            ->when($criteria['max_price'] ?? 0,     fn ($q, $p) => $q->where('price', '<=', $p))
+            ->limit(10)->get()
+            ->map(fn ($p) => ['id' => $p->id, 'name' => $p->name, 'price' => $p->price, 'url' => route('products.show', $p)])
+            ->all();
+    }
+
+    public function find(int|string $productId): ?array { /* ... */ }
+}
+```
+
+All three endpoints run through the same [Security & Trust](#-security--trust) rate limiting, message-length, word-filter, and prompt-injection checks as the main chat.
+
 ## 🤖 Providers
 
 ### Ollama — Self-Hosted & Free
@@ -768,10 +814,10 @@ Uses `Http::fake()` — no real API calls needed.
 | v2.0 | Analytics dashboard + webhooks | ✅ Released |
 | v2.0 | Bot profiles + embeddable floating widget | ✅ Released |
 | v2.0 | Image generation (Together AI / FLUX, via `/image`) | ✅ Released |
+| v2.0 | Commerce assistants (schema-agnostic Order/Product/StoreAnalytics contracts) | ✅ Released |
 | v2.1 | Function / Tool calling | 🔜 Planned |
 | v2.1 | Groq driver | 🔜 Planned |
 | v2.2 | Response caching | 🔜 Planned |
-| v2.2 | Commerce bot kit (order/product Q&A against a host e-commerce schema) | 🔜 Planned |
 
 ---
 

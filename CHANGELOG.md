@@ -2,6 +2,16 @@
 
 ## v2.0.0 — 2026-08-13
 
+### 🛒 Commerce Assistants (schema-agnostic)
+
+Three new endpoints — "Ask Your Store" (admin analytics), Product Q&A/Finder, and Order Status — built entirely on three PHP interfaces (`src/Commerce/Contracts/{ProductResolver,OrderResolver,StoreAnalyticsResolver}.php`) instead of any concrete e-commerce schema. **Creates zero database tables** — nothing to collide with an existing site's own catalog/orders, WooCommerce, or any other package. Bind your own resolver implementation in your app's service provider; any endpoint whose resolver isn't bound returns a clear `501` instead of guessing at a schema. The Store Assistant is fail-closed by design — refused unless the host app explicitly defines `Gate::define('view-store-assistant', ...)`.
+
+**New package files:** `src/Commerce/Contracts/{ProductResolver,OrderResolver,StoreAnalyticsResolver}.php`, `src/Commerce/Support/{StructuredResponseParser,StorePrompts}.php`, `src/Commerce/Controllers/{StoreAssistantController,ProductAssistantController,OrderStatusController}.php`, `src/Commerce/CommerceServiceProvider.php`, `routes/commerce.php`.
+
+### 🧹 Namespace hygiene (pre-release)
+
+Renamed the `projects` / `project_files` tables to `ai_projects` / `ai_project_files` — the bare names were a near-certain collision with any host app's own "projects" concept. Safe to change in place (not a rename migration): this table was never part of a tagged release, so no installed site has ever created it under the old name. If you're running off `main` pre-release and already migrated, drop and re-migrate rather than upgrading in place.
+
 ### 🔒 Security & Trust Suite
 
 The Laravel equivalent of `easyit-ai-chat`'s v2.0 Security Suite, config/env-driven instead of a settings database:

@@ -7,7 +7,7 @@ use Illuminate\Support\Facades\Schema;
 /**
  * Step 2 of 2 for Projects feature.
  * Adds project_id FK to chat_sessions.
- * Depends on: chat_sessions (2026_08_05) + projects (2026_08_06_000000)
+ * Depends on: chat_sessions (2026_08_05) + ai_projects (2026_08_06_000000)
  */
 return new class extends Migration
 {
@@ -18,7 +18,7 @@ return new class extends Migration
                 $table->foreignId('project_id')
                       ->nullable()
                       ->after('title')
-                      ->constrained()
+                      ->constrained('ai_projects')
                       ->nullOnDelete();
             });
         }
