@@ -8,6 +8,8 @@ use EasyAI\LaravelAI\Facades\AI;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
+use Illuminate\Support\Facades\Log;
+use Illuminate\Support\Facades\Storage;
 
 class ProjectController extends Controller
 {
@@ -79,6 +81,18 @@ class ProjectController extends Controller
             AI::rag()->flush('project_' . $proj->id);
         } catch (\Throwable $e) {
             // Non-fatal
+        }
+
+        // The project_files *rows* cascade-delete via the FK, but their
+        // actual files on disk (project-files/{project_id}/...) don't — a
+        // DB cascade only ever touches the database, and it was silently
+        // leaking every uploaded file for every deleted project. Best-effort:
+        // a storage failure here shouldn't block the user from deleting
+        // their project.
+        try {
+            Storage::disk('local')->deleteDirectory('project-files/' . $proj->id);
+        } catch (\Throwable $e) {
+            Log::warning('laraveleasyai: failed to clean up files for deleted project', ['project_id' => $proj->id, 'error' => $e->getMessage()]);
         }
 
         $proj->delete();

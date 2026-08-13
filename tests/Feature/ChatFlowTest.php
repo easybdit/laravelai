@@ -161,4 +161,90 @@ class ChatFlowTest extends TestCase
 
         $response->assertStatus(403);
     }
+
+    /**
+     * The session's message history is now loaded bounded (most recent N,
+     * config('ai.chat.max_loaded_messages')) instead of unbounded — this
+     * proves the bound doesn't break "find the true last assistant message
+     * to regenerate" even when the real last message sits right at the
+     * edge of a deliberately tiny cap, since a naive off-by-one in the
+     * DESC+LIMIT+re-sort logic would silently regenerate the WRONG reply.
+     */
+    public function test_regenerate_deletes_the_true_last_assistant_message_even_with_a_tiny_history_cap(): void
+    {
+        config(['ai.chat.max_loaded_messages' => 2]);
+
+        $session = ChatSession::create(['title' => 'Long chat']);
+        foreach (range(1, 3) as $i) {
+            ChatMessage::create(['chat_session_id' => $session->id, 'role' => 'user', 'content' => "Question {$i}"]);
+            ChatMessage::create(['chat_session_id' => $session->id, 'role' => 'assistant', 'content' => "Answer {$i}"]);
+        }
+        $lastAssistantId = $session->messages()->where('role', 'assistant')->latest('id')->first()->id;
+
+        Http::fake([
+            '127.0.0.1:11434/api/chat' => Http::response(
+                ['message' => ['role' => 'assistant', 'content' => 'Regenerated answer'], 'done' => true]
+            ),
+        ]);
+
+        $response = $this->call('POST', '/ai-chat/api/stream', [
+            'regenerate' => true,
+            'session_id' => $session->id,
+        ], [], [], ['HTTP_ACCEPT' => 'text/event-stream']);
+
+        $response->assertOk();
+        $response->streamedContent(); // forces the streaming closure to actually run
+        $this->assertDatabaseMissing('chat_messages', ['id' => $lastAssistantId]);
+        $this->assertDatabaseHas('chat_messages', ['chat_session_id' => $session->id, 'content' => 'Regenerated answer']);
+        // The earlier turns are untouched — only the true last reply was replaced.
+        $this->assertDatabaseHas('chat_messages', ['chat_session_id' => $session->id, 'content' => 'Answer 1']);
+        $this->assertDatabaseHas('chat_messages', ['chat_session_id' => $session->id, 'content' => 'Answer 2']);
+    }
+
+    public function test_stream_still_correctly_detects_first_message_with_a_tiny_history_cap(): void
+    {
+        config(['ai.chat.max_loaded_messages' => 1]);
+
+        Http::fake([
+            '127.0.0.1:11434/api/chat' => Http::sequence()
+                ->push(['message' => ['role' => 'assistant', 'content' => 'A Title'], 'done' => true])
+                ->push(['message' => ['role' => 'assistant', 'content' => 'Hello!'], 'done' => true]),
+        ]);
+
+        $session = ChatSession::create(['title' => 'New Chat']);
+
+        $response = $this->call('POST', '/ai-chat/api/stream', [
+            'message'    => 'Hi',
+            'session_id' => $session->id,
+        ], [], [], ['HTTP_ACCEPT' => 'text/event-stream']);
+
+        $response->assertOk();
+        // A title only gets auto-generated on the *first* message — proves
+        // isFirstMessage was still computed correctly against a 1-message cap.
+        $session->refresh();
+        $this->assertSame('A Title', $session->title);
+    }
+
+    /**
+     * chat_attachments *rows* cascade-delete via the FK when a session is
+     * deleted, but their actual files on disk never did — every deleted
+     * session with attachments silently leaked its uploaded files forever.
+     */
+    public function test_deleting_a_session_also_deletes_its_attachment_files_from_disk(): void
+    {
+        \Illuminate\Support\Facades\Storage::fake('local');
+
+        $session = ChatSession::create(['title' => 'New Chat', 'guest_token' => str_repeat('a', 40)]);
+        \Illuminate\Support\Facades\Storage::disk('local')->put(
+            "chat-attachments/{$session->id}/notes.txt",
+            'some uploaded content'
+        );
+
+        $this->withCredentials()
+            ->withCookies(['laravelai_guest' => str_repeat('a', 40)])
+            ->deleteJson("/ai-chat/api/sessions/{$session->id}")
+            ->assertOk();
+
+        \Illuminate\Support\Facades\Storage::disk('local')->assertMissing("chat-attachments/{$session->id}/notes.txt");
+    }
 }

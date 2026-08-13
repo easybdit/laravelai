@@ -121,6 +121,17 @@ return [
         'max_scan_rows'  => (int) env('AI_RAG_MAX_SCAN_ROWS', 50000),
 
         /**
+         * Opt-in: run document ingestion (chunking + per-chunk embedding
+         * calls) on the queue instead of inline during the upload request.
+         * Off by default — nobody's synchronous behavior changes on
+         * upgrade. When enabled, ProjectFileController dispatches
+         * RAG\Jobs\IngestDocumentJob and marks the file 'queued' instead of
+         * 'ingested' until the job completes. Requires a configured queue
+         * worker (queue.php) to actually process the job.
+         */
+        'queue_ingestion' => (bool) env('AI_RAG_QUEUE_INGESTION', false),
+
+        /**
          * Auto-index arbitrary Eloquent models into RAG on save/delete — the
          * Laravel equivalent of the WordPress plugin's "Ask This Site". Empty
          * by default (opt-in): indexing nothing until you list a model here
@@ -158,6 +169,18 @@ return [
         // searches what's loaded, so raise this if you need deep history
         // search rather than just recency.
         'sidebar_limit'      => (int) env('AI_CHAT_SIDEBAR_LIMIT', 100),
+
+        // How many of a single conversation's most recent messages get
+        // fetched from the DB per request in /ai-chat/api/stream — not the
+        // same thing as context_messages above (which further trims *this*
+        // down to what's actually sent to the AI). Without this, a very
+        // long-running conversation would get its entire history loaded on
+        // every single new message, just to check things like "is this the
+        // first message" or find the last reply to regenerate. 500 is
+        // generous for virtually every real conversation; raise it only if
+        // you genuinely expect single conversations with thousands of turns.
+        'max_loaded_messages' => (int) env('AI_CHAT_MAX_LOADED_MESSAGES', 500),
+
         'show_internal_errors' => env('AI_CHAT_SHOW_INTERNAL_ERRORS'), // null = fall back to app.debug
 
         /**
@@ -252,6 +275,12 @@ return [
         'webhook' => [
             'url'    => env('AI_CHAT_WEBHOOK_URL'),
             'secret' => env('AI_CHAT_WEBHOOK_SECRET'),
+            // Opt-in: dispatch webhook delivery via Chat\Jobs\SendWebhookJob
+            // instead of calling Http::post() inline inside the SSE stream.
+            // Off by default (unchanged synchronous behavior) — the webhook
+            // result is never shown to the user either way, so queueing it
+            // is a pure latency win once a queue worker is running.
+            'queue'  => (bool) env('AI_CHAT_WEBHOOK_QUEUE', false),
         ],
 
         'attachments' => [

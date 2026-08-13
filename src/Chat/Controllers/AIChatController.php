@@ -3,6 +3,7 @@
 namespace EasyAI\LaravelAI\Chat\Controllers;
 
 use EasyAI\LaravelAI\Chat\Exceptions\ChatBlockedException;
+use EasyAI\LaravelAI\Chat\Jobs\SendWebhookJob;
 use EasyAI\LaravelAI\Chat\Models\ChatAttachment;
 use EasyAI\LaravelAI\Chat\Models\ChatMessage;
 use EasyAI\LaravelAI\Chat\Models\ChatSession;
@@ -178,6 +179,18 @@ class AIChatController extends Controller
         [$userId, $guestToken] = ChatIdentity::resolve($request);
         if (!$session->isOwnedBy($userId, $guestToken)) {
             abort(403);
+        }
+
+        // The chat_attachments *rows* cascade-delete via the FK, but their
+        // actual files on disk (chat-attachments/{session_id}/...) don't —
+        // a DB cascade only ever touches the database. Left alone, every
+        // deleted session with attachments leaks its uploaded files
+        // forever. Best-effort: a storage failure here shouldn't block the
+        // user from deleting their session.
+        try {
+            Storage::disk('local')->deleteDirectory('chat-attachments/' . $session->id);
+        } catch (\Throwable $e) {
+            Log::warning('laraveleasyai: failed to clean up attachment files for deleted session', ['session_id' => $session->id, 'error' => $e->getMessage()]);
         }
 
         $session->delete();
@@ -397,6 +410,14 @@ class AIChatController extends Controller
             return;
         }
 
+        // Opt-in: queue the delivery instead of blocking the SSE stream's
+        // [DONE] event on the webhook endpoint's response time. Default
+        // (false) keeps today's synchronous behavior byte-identical.
+        if (config('ai.chat.webhook.queue', false)) {
+            SendWebhookJob::dispatch($session->id, $userMessage, $aiReply, $provider);
+            return;
+        }
+
         $payload = [
             'session_id'   => $session->id,
             'user_message' => $userMessage,
@@ -432,7 +453,31 @@ class AIChatController extends Controller
         $guestToken = ChatIdentity::ensureGuestToken($guestToken);
         $ip = (string) $request->ip();
 
-        $session = ChatSession::with('messages')->findOrFail($request->integer('session_id'));
+        // Bounded, not unbounded — a conversation with thousands of turns
+        // would otherwise get its *entire* history fetched from the DB on
+        // every single new message, just to check isEmpty()/find the last
+        // assistant reply/build AI context, all of which only ever look at
+        // the most recent handful of messages anyway. A single ChatSession
+        // eager load isn't the N+1-prone "limit per group" case (there's
+        // only one parent here), so a plain ORDER BY DESC + LIMIT works
+        // correctly — re-sorted back to ascending order afterward since
+        // every consumer of $session->messages below expects chronological
+        // order, same as the relation's own default.
+        //
+        // Sorted/limited by id, not created_at: several messages created
+        // within the same second (routine in fast succession, e.g. a
+        // synthetic no-storage-mode append, or just quick back-and-forth)
+        // share an identical created_at at second precision, and ORDER BY
+        // ... DESC LIMIT N has no guaranteed tie-break order among equal
+        // values — it could just as easily grab the *oldest* N of a tied
+        // group as the newest. id is unique and monotonically increasing,
+        // so it can't have this problem.
+        $historyLoadLimit = max(1, (int) config('ai.chat.max_loaded_messages', 500));
+        $session = ChatSession::with(['messages' => function ($q) use ($historyLoadLimit) {
+            $q->reorder()->orderByDesc('id')->limit($historyLoadLimit);
+        }])->findOrFail($request->integer('session_id'));
+        $session->setRelation('messages', $session->messages->sortBy('id')->values());
+
         if (!$session->isOwnedBy($userId, $guestToken)) {
             abort(403);
         }

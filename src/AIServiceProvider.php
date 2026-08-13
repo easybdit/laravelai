@@ -34,6 +34,10 @@ class AIServiceProvider extends ServiceProvider
             $this->publishes([
                 __DIR__ . '/../config/ai.php' => config_path('ai.php'),
             ], 'ai-config');
+
+            $this->commands([
+                \EasyAI\LaravelAI\Console\InstallCommand::class,
+            ]);
         }
     }
 }

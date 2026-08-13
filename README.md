@@ -105,20 +105,26 @@ Built on **Laravel's driver pattern** — same architecture as Mail, Cache, and 
 composer require easybdit/laraveleasyai
 ```
 
-**Step 2:** Publish config and assets
+**Step 2:** Run the guided installer — publishes config/assets, runs migrations, and walks you through picking a provider (Ollama, OpenAI, Anthropic, DeepSeek, or Gemini), all in one interactive command:
+
+```bash
+php artisan laravelai:install
+```
+
+It asks before overwriting anything that already exists, and never clobbers an `.env` value you've already set — safe to run again later if you just want to add a second provider's key.
+
+**Step 3:** Visit `/ai-chat` in your browser ✅
+
+<details>
+<summary>Prefer doing it manually, or scripting the install for CI? (click to expand)</summary>
 
 ```bash
 php artisan vendor:publish --tag=ai-config
 php artisan vendor:publish --tag=ai-chat-assets
-```
-
-**Step 3:** Run migrations
-
-```bash
 php artisan migrate
 ```
 
-**Step 4:** Add to `.env`
+Then add to `.env` yourself:
 
 ```env
 AI_PROVIDER=ollama
@@ -126,7 +132,7 @@ AI_OLLAMA_URL=http://127.0.0.1:11434
 AI_OLLAMA_MODEL=qwen2:1.5b
 ```
 
-**Step 5:** Visit `/ai-chat` in your browser ✅
+</details>
 
 ### Requirements
 
@@ -176,29 +182,18 @@ php artisan tinker
 
 **LaravelAI কী?** একটি Laravel প্যাকেজ, যা দিয়ে আপনি এক জায়গা থেকেই Ollama (নিজের সার্ভারে ফ্রি), OpenAI (ChatGPT), Anthropic (Claude), DeepSeek, Gemini — যেকোনো AI ব্যবহার করতে পারবেন, কোড না বদলিয়েই। সাথে রেডি-মেড একটি চ্যাট UI (`/ai-chat`) থাকে, যা সরাসরি ইনস্টল করেই ব্যবহার করা যায়।
 
-**ইনস্টলেশন (৫ ধাপ):**
+**ইনস্টলেশন (মাত্র ২ ধাপ):**
 
 ```bash
 # ধাপ ১: কম্পোজার দিয়ে ইনস্টল করুন
 composer require easybdit/laraveleasyai
 
-# ধাপ ২: কনফিগ ও অ্যাসেট পাবলিশ করুন
-php artisan vendor:publish --tag=ai-config
-php artisan vendor:publish --tag=ai-chat-assets
-
-# ধাপ ৩: মাইগ্রেশন চালান
-php artisan migrate
+# ধাপ ২: গাইডেড ইনস্টলার চালান — কনফিগ/অ্যাসেট পাবলিশ, মাইগ্রেশন, এবং
+# প্রোভাইডার সিলেকশন সব একসাথে, ইন্টারেক্টিভভাবে
+php artisan laravelai:install
 ```
 
-**ধাপ ৪:** `.env` ফাইলে এই লাইনগুলো যোগ করুন —
-
-```env
-AI_PROVIDER=ollama
-AI_OLLAMA_URL=http://127.0.0.1:11434
-AI_OLLAMA_MODEL=qwen2:1.5b
-```
-
-**ধাপ ৫:** ব্রাউজারে `/ai-chat` ভিজিট করুন — ব্যস, চ্যাট রেডি ✅
+এরপর ব্রাউজারে `/ai-chat` ভিজিট করুন — ব্যস, চ্যাট রেডি ✅
 
 **কোড দিয়ে ব্যবহার করতে চাইলে:**
 
@@ -1049,6 +1044,11 @@ AI_WEB_SEARCH_PROVIDER=tavily
 AI_WEB_SEARCH_LIMIT=5
 AI_TAVILY_API_KEY=
 AI_BRAVE_API_KEY=
+
+# Scalability (v2.6.0) — queueing is opt-in, off by default
+AI_RAG_QUEUE_INGESTION=false
+AI_CHAT_WEBHOOK_QUEUE=false
+AI_CHAT_MAX_LOADED_MESSAGES=500
 ```
 
 ---
@@ -1176,9 +1176,13 @@ Either way, the sidebar's identity line and the Settings page's Gate (`manage-ai
 | v2.4 | Commerce assistants — schema-agnostic Product Q&A, Order Status, Ask Your Store | ✅ Released |
 | v2.5 | Agent module — function/tool calling (OpenAI, Anthropic, Gemini, Ollama) | ✅ Released |
 | v2.5 | Built-in web search tool (Tavily / Brave, pluggable) | ✅ Released |
-| v2.6 | Groq driver | 🔜 Planned |
-| v2.6 | Streaming the agent module's final answer after the tool-call loop resolves | 🔜 Planned |
-| v2.6 | Response caching | 🔜 Planned |
+| v2.6 | `php artisan laravelai:install` — guided one-command setup | ✅ Released |
+| v2.6 | Opt-in queued RAG ingestion + webhook delivery | ✅ Released |
+| v2.6 | Fix — attachment/project files leaked on disk after deletion | ✅ Released |
+| v2.6 | Bounded conversation-history loading for very long chats | ✅ Released |
+| v2.7 | Groq driver | 🔜 Planned |
+| v2.7 | Streaming the agent module's final answer after the tool-call loop resolves | 🔜 Planned |
+| v2.7 | Response caching | 🔜 Planned |
 | v2.6 | Pluggable vector-store backend (pgvector, etc.) for large RAG corpora | 🔜 Planned |
 
 ---

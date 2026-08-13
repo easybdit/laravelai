@@ -1,5 +1,26 @@
 # Changelog
 
+## v2.6.0 — 2026-08-14
+
+### 🚀 The rest of the scalability pass: queues, an installer, and two storage leaks closed
+
+Rounding out this session's scalability audit — a batch of fixes and quality-of-life additions aimed squarely at "works the same for one user as it does for ten thousand."
+
+**Queue-based RAG ingestion and webhook delivery** (both opt-in, both `false` by default — nobody's behavior changes on upgrade):
+
+- Document ingestion (chunking + a real embedding API call per chunk) previously ran fully inline during the file-upload request — for a large document, the uploader's browser just sat there for however long every chunk took to embed, sequentially. `AI_RAG_QUEUE_INGESTION=true` hands it off to a new `IngestDocumentJob` instead; the file sits at a new `queued` status until the job completes.
+- The fire-and-forget webhook after every AI reply ran synchronously *inside the SSE streaming closure*, delaying the browser's "done" moment by however long the webhook endpoint took to respond — even though its result was never shown to the user anyway. `AI_CHAT_WEBHOOK_QUEUE=true` dispatches a new `SendWebhookJob` instead.
+
+**`php artisan laravelai:install`** — collapses the previous 5 manual setup steps (publish config, publish assets, migrate, hand-edit `.env`) into one guided interactive command: publishes everything (asks before overwriting anything that already exists), offers to run migrations, walks through picking a provider and entering its key/URL, writes the result to `.env` without ever clobbering a value you'd already set, and live-checks the connection when it can (Ollama).
+
+**Two real storage leaks, closed:** deleting a chat session or a project cascade-deleted their database rows via the foreign key, same as always — but the actual *files* on disk (chat attachments, project documents) were never cleaned up, silently accumulating forever on every deletion. Both `deleteSession()` and `Project::destroy()` now clean up their file directories too (best-effort — a storage hiccup logs a warning rather than blocking the deletion).
+
+**Bounded conversation-history loading:** `/ai-chat/api/stream` loaded a session's *entire* message history from the database on every single new message, just to check things like "is this the first message" or find the last reply to regenerate — a real cost for any conversation with hundreds or thousands of turns. Now bounded to the most recent `config('ai.chat.max_loaded_messages')` (default 500), ordered/limited by `id` rather than `created_at` specifically to stay correct even when several messages share an identical timestamp (routine at second-precision) — an earlier version of this fix using `created_at` for the tie-break had no guaranteed order among equal timestamps and was caught failing its own regression test before shipping.
+
+16 new tests across all of the above (queue jobs, the installer, both GC fixes, and the bounded-history edge cases). 158/158 passing overall.
+
+---
+
 ## v2.5.0 — 2026-08-14
 
 ### 🧰 Agent Module — tool/function calling across every provider

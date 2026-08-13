@@ -65,19 +65,32 @@ class ProjectFileController extends Controller
             }
 
             $source = 'project_' . $proj->id;
-            AI::rag()->ingest($text, $source);
 
-            $count = DB::table(config('ai.rag.table', 'ai_documents'))
-                        ->where('source', $source)
-                        ->count();
+            if (config('ai.rag.queue_ingestion', false)) {
+                // Opt-in: hand off chunking/embedding to the queue instead of
+                // blocking this request. There's no row count to check yet —
+                // the job hasn't run — so the file just sits at 'queued'
+                // until IngestDocumentJob finishes (or fails, visible via
+                // Laravel's normal queue failure handling).
+                AI::rag()->ingestAsync($text, $source);
+                $pf->update(['status' => 'queued']);
+            } else {
+                // Default, unchanged behavior: ingest synchronously and
+                // confirm rows actually landed before reporting success.
+                AI::rag()->ingest($text, $source);
 
-            if ($count === 0) {
-                throw new \RuntimeException(
-                    'Ingestion ran but no chunks stored. Check nomic-embed-text is running.'
-                );
+                $count = DB::table(config('ai.rag.table', 'ai_documents'))
+                            ->where('source', $source)
+                            ->count();
+
+                if ($count === 0) {
+                    throw new \RuntimeException(
+                        'Ingestion ran but no chunks stored. Check nomic-embed-text is running.'
+                    );
+                }
+
+                $pf->update(['status' => 'ingested']);
             }
-
-            $pf->update(['status' => 'ingested']);
 
         } catch (\Throwable $e) {
             $pf->update(['status' => 'failed']);
@@ -121,12 +134,23 @@ class ProjectFileController extends Controller
             // whole project's chunk set.
             DB::table(config('ai.rag.table', 'ai_documents'))->where('source', $source)->delete();
 
-            foreach ($proj->files()->where('status', 'ingested')->where('id', '!=', $pf->id)->get() as $other) {
-                AI::rag()->ingest($this->extractText($other), $source);
-            }
-            AI::rag()->ingest($text, $source);
+            if (config('ai.rag.queue_ingestion', false)) {
+                // Opt-in queued path — same reasoning as store() above.
+                foreach ($proj->files()->where('status', 'ingested')->where('id', '!=', $pf->id)->get() as $other) {
+                    AI::rag()->ingestAsync($this->extractText($other), $source);
+                }
+                AI::rag()->ingestAsync($text, $source);
 
-            $pf->update(['status' => 'ingested']);
+                $pf->update(['status' => 'queued']);
+            } else {
+                // Default, unchanged behavior.
+                foreach ($proj->files()->where('status', 'ingested')->where('id', '!=', $pf->id)->get() as $other) {
+                    AI::rag()->ingest($this->extractText($other), $source);
+                }
+                AI::rag()->ingest($text, $source);
+
+                $pf->update(['status' => 'ingested']);
+            }
         } catch (\Throwable $e) {
             $pf->update(['status' => 'failed']);
             return response()->json(['file' => $pf->fresh(), 'error' => $e->getMessage()], 422);

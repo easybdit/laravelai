@@ -112,4 +112,26 @@ class ProjectOwnershipTest extends TestCase
         $response->assertOk();
         $this->assertCount(2, $response->json());
     }
+
+    /**
+     * project_files *rows* cascade-delete via the FK when a project is
+     * deleted, but their actual files on disk never did — every deleted
+     * project silently leaked every file ever uploaded to it.
+     */
+    public function test_deleting_a_project_also_deletes_its_files_from_disk(): void
+    {
+        \Illuminate\Support\Facades\Storage::fake('local');
+
+        $project = Project::create(['name' => 'Mine', 'guest_token' => str_repeat('a', 40)]);
+        \Illuminate\Support\Facades\Storage::disk('local')->put(
+            "project-files/{$project->id}/notes.txt",
+            'some uploaded content'
+        );
+
+        $this->withCredentials()->withCookies($this->withGuestCookie(str_repeat('a', 40)))
+            ->deleteJson("/ai-chat/api/projects/{$project->id}")
+            ->assertOk();
+
+        \Illuminate\Support\Facades\Storage::disk('local')->assertMissing("project-files/{$project->id}/notes.txt");
+    }
 }

@@ -2,6 +2,7 @@
 namespace EasyAI\LaravelAI\RAG;
 
 use EasyAI\LaravelAI\Facades\AI;
+use EasyAI\LaravelAI\RAG\Jobs\IngestDocumentJob;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 
@@ -30,6 +31,18 @@ class RAGManager
             $count++;
         }
         return $count;
+    }
+
+    /**
+     * Opt-in queued counterpart to ingest() — dispatches IngestDocumentJob
+     * instead of embedding every chunk inline. ingest() itself keeps its
+     * synchronous default unchanged; callers that want the non-blocking
+     * behavior (e.g. ProjectFileController, gated by
+     * config('ai.rag.queue_ingestion')) call this instead.
+     */
+    public function ingestAsync(string $content, string $source = ''): void
+    {
+        IngestDocumentJob::dispatch($content, $source);
     }
 
     public function ask(string $question): string
