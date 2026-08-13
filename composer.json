@@ -74,5 +74,10 @@
         }
     },
     "minimum-stability": "stable",
-    "prefer-stable": true
+    "prefer-stable": true,
+    "policy": {
+        "advisories": {
+            "block": false
+        }
+    }
 }

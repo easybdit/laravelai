@@ -42,8 +42,26 @@ jobs:
           composer require "illuminate/support:${{ matrix.laravel }}" "illuminate/http:${{ matrix.laravel }}" "orchestra/testbench:${{ matrix.testbench }}" --no-update
           composer install --no-interaction --prefer-dist
 
+      # Plain `run: vendor/bin/phpunit` leaves a failure's actual PHPUnit/PHP
+      # output stuck inside the step's raw log, which GitHub does not expose
+      # to unauthenticated viewers (confirmed while diagnosing a real CI
+      # failure in this exact job — the log page shows "Sign in to view
+      # logs" even on this public repo). Surfacing the tail of the output as
+      # ::error:: workflow commands turns it into a check-run annotation
+      # instead, which the public REST API does return without auth
+      # (.../check-runs/{job_id}/annotations) — the only way anyone without
+      # write access to this repo can actually read why a run failed.
       - name: Run tests
-        run: vendor/bin/phpunit
+        run: |
+          set +e
+          vendor/bin/phpunit 2>&1 | tee /tmp/phpunit-output.txt
+          EXIT_CODE=${PIPESTATUS[0]}
+          if [ $EXIT_CODE -ne 0 ]; then
+            tail -n 60 /tmp/phpunit-output.txt | while IFS= read -r line; do
+              echo "::error::${line}"
+            done
+          fi
+          exit $EXIT_CODE
 
   # In addition to (not replacing) the sqlite matrix above — several
   # migrations have real driver-specific branches (e.g. the MySQL-only
@@ -143,5 +161,23 @@ jobs:
             exit(1);
           '
 
+      # Plain `run: vendor/bin/phpunit` leaves a failure's actual PHPUnit/PHP
+      # output stuck inside the step's raw log, which GitHub does not expose
+      # to unauthenticated viewers (confirmed while diagnosing a real CI
+      # failure in this exact job — the log page shows "Sign in to view
+      # logs" even on this public repo). Surfacing the tail of the output as
+      # ::error:: workflow commands turns it into a check-run annotation
+      # instead, which the public REST API does return without auth
+      # (.../check-runs/{job_id}/annotations) — the only way anyone without
+      # write access to this repo can actually read why a run failed.
       - name: Run tests
-        run: vendor/bin/phpunit
+        run: |
+          set +e
+          vendor/bin/phpunit 2>&1 | tee /tmp/phpunit-output.txt
+          EXIT_CODE=${PIPESTATUS[0]}
+          if [ $EXIT_CODE -ne 0 ]; then
+            tail -n 60 /tmp/phpunit-output.txt | while IFS= read -r line; do
+              echo "::error::${line}"
+            done
+          fi
+          exit $EXIT_CODE
