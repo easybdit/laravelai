@@ -124,11 +124,11 @@ return [
 
     /**
      * Chat UI — everything the WordPress plugin exposes through wp-admin
-     * settings screens, expressed as config/env here instead. This package
-     * ships no settings database table or admin panel by design: the host
-     * app already has its own way to manage config (.env, a settings
-     * package, feature flags) and duplicating that would fight it rather
-     * than fit into it.
+     * settings screens, expressed as config/env by default. .env stays the
+     * source of truth for anyone who never opens the Settings page — the
+     * ai_settings table (SettingsOverlay) is a purely additive, opt-in
+     * override layer for admins who'd rather change providers/keys from
+     * /ai-chat/settings than redeploy .env.
      */
     'chat' => [
         'system_prompt'      => env('AI_CHAT_SYSTEM_PROMPT', 'You are a helpful AI assistant.'),
@@ -137,6 +137,18 @@ return [
         'context_messages'   => (int) env('AI_CHAT_CONTEXT_MESSAGES', 10),
         'disable_storage'    => (bool) env('AI_CHAT_DISABLE_STORAGE', false),
         'show_internal_errors' => env('AI_CHAT_SHOW_INTERNAL_ERRORS'), // null = fall back to app.debug
+
+        // Extra middleware for the whole /ai-chat area — empty (public
+        // page) by default. Set AI_CHAT_MIDDLEWARE=auth to require login
+        // for everything under /ai-chat, redirecting guests to your normal
+        // login page, rather than just refusing individual actions.
+        'middleware' => array_values(array_filter(array_map('trim', explode(',', (string) env('AI_CHAT_MIDDLEWARE', ''))))),
+
+        // The Settings page (provider keys, default provider) is
+        // fail-closed regardless of the above — refused unless the host
+        // app explicitly defines this Gate, same pattern as the Commerce
+        // Store Assistant. There is no "everyone" mode for changing API keys.
+        'settings_gate' => env('AI_CHAT_SETTINGS_GATE', 'manage-ai-settings'),
 
         'access' => [
             'allow_guest' => (bool) env('AI_CHAT_ALLOW_GUEST', true),

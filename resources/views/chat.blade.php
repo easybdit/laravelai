@@ -107,20 +107,30 @@
         .icon-btn:hover { background: #e8eaef; color: var(--text); }
         .icon-btn.active { background: var(--accent-soft, #eeecfb); color: var(--accent); border-color: var(--accent); }
 
-        /* ── MESSAGES ── */
+        /* ── MESSAGES ──
+           Claude/ChatGPT layout: user turns are a right-aligned bubble with
+           no avatar; assistant turns are left-aligned, full-width, avatar
+           visible — not a symmetric two-column chat log. Pure CSS on top of
+           the existing avatar+bubble-wrap markup (row-reverse), so both the
+           server-rendered history and the JS-appended live message use the
+           same rule set with no HTML changes. */
         .messages { flex: 1; overflow-y: auto; padding: 24px 0; }
-        .msg-row { display: flex; gap: 12px; padding: 10px 24px; max-width: 900px; margin: 0 auto; width: 100%; }
+        .msg-row { display: flex; gap: 12px; padding: 6px 24px; max-width: 900px; margin: 0 auto; width: 100%; }
+        .msg-row.user { flex-direction: row-reverse; }
         .avatar { width: 30px; height: 30px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 0.65rem; font-weight: 700; flex-shrink: 0; overflow: hidden; }
-        .avatar.user      { background: var(--user-bg); color: white; }
+        .avatar.user      { display: none; } /* right-aligned bubble speaks for itself, matching Claude/ChatGPT */
         .avatar.assistant { background: linear-gradient(135deg, #0ea5e9, #6366f1); color: white; }
         .avatar img { width: 100%; height: 100%; object-fit: cover; }
         .bubble-wrap { flex: 1; min-width: 0; }
+        .msg-row.user .bubble-wrap { flex: 0 1 auto; max-width: 75%; margin-left: auto; display: flex; flex-direction: column; align-items: flex-end; }
         .msg-meta { display: flex; align-items: baseline; gap: 8px; margin-bottom: 3px; }
+        .msg-row.user .msg-meta { flex-direction: row-reverse; }
         .msg-label { font-size: 0.72rem; font-weight: 600; color: var(--text-muted); }
         .msg-time { font-size: 0.68rem; color: var(--text-muted); opacity: 0.75; font-variant-numeric: tabular-nums; }
         .bubble { padding: 12px 16px; border-radius: var(--radius); font-size: 0.88rem; line-height: 1.6; }
-        .bubble.user      { background: var(--bot-bg); border: 1px solid var(--border); box-shadow: var(--shadow); color: var(--text); white-space: pre-wrap; }
-        .bubble.assistant { background: transparent; color: var(--text); }
+        .bubble.user      { background: var(--user-bg); color: #fff; box-shadow: var(--shadow); white-space: pre-wrap; border-bottom-right-radius: 4px; }
+        .bubble.assistant { background: transparent; color: var(--text); padding-left: 0; padding-right: 0; }
+        .msg-row.user .bubble-actions { justify-content: flex-end; }
         .bubble-actions { display: flex; gap: 4px; margin-top: 5px; padding-left: 2px; flex-wrap: wrap; align-items: center; }
         .icon-action { font-size: 0.72rem; color: var(--text-muted); background: none; border: 1px solid var(--border); padding: 3px 8px; border-radius: 6px; cursor: pointer; transition: all 0.15s; line-height: 1.2; }
         .icon-action:hover { background: var(--bg); color: var(--text); }
@@ -257,6 +267,7 @@
             .chat-header .header-project-tag, .chat-header .rag-badge { display: none; }
             .chat-header .header-meta { margin-left: 0; width: 100%; justify-content: flex-end; overflow-x: auto; }
             .msg-row { padding: 8px 14px; max-width: none; }
+            .msg-row.user .bubble-wrap { max-width: 88%; }
             .input-area { padding: 10px 14px 14px; }
             .messages { padding: 14px 0; }
             /* Touch targets grow slightly — mouse-sized 30px buttons are
@@ -355,7 +366,12 @@
 
     <div class="sidebar-footer">
         <a href="https://packagist.org/packages/muradbdinfo/laravelai" target="_blank">muradbdinfo/laravelai</a>
-        <a href="{{ route('ai-chat.analytics') }}" title="Analytics">📊</a>
+        <span style="display:flex; gap:8px;">
+            <a href="{{ route('ai-chat.analytics') }}" title="Analytics">📊</a>
+            @if($canManageSettings ?? false)
+                <a href="{{ route('ai-chat.settings.edit') }}" title="Settings">⚙️</a>
+            @endif
+        </span>
     </div>
 </aside>
 

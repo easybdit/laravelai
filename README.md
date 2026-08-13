@@ -27,6 +27,7 @@
   <a href="#-projects--knowledge-bases">Projects</a> •
   <a href="#-rag-built-in">RAG</a> •
   <a href="#-security--trust">Security</a> •
+  <a href="#%EF%B8%8F-provider-settings-ui--auth-guard">Settings UI</a> •
   <a href="#-chat-ux--personalization">UX &amp; Widget</a> •
   <a href="#-providers">Providers</a> •
   <a href="#-api-reference">API Reference</a> •
@@ -366,6 +367,23 @@ Chat sessions with no project attached automatically pull context from every aut
 "Role" restriction looks for `$user->hasAnyRole([...])` (configurable method name — works with Spatie permission out of the box) or a `roles` collection/array on the user model. "Gate" restriction checks a named Laravel `Gate` you define yourself (`AI_CHAT_ACCESS_GATE`, defaults to `use-ai-chat`).
 
 Internal exception detail (e.g. "No API key configured for OpenAI") is only shown to callers who pass the same gate — everyone else gets a generic "temporarily unavailable" message. Set `AI_CHAT_SHOW_INTERNAL_ERRORS=true` to always show real errors (e.g. in a staging environment).
+
+## ⚙️ Provider Settings UI & Auth Guard
+
+Change providers/API keys from `/ai-chat/settings` instead of editing `.env` and redeploying. `.env` stays the source of truth for everything you never touch in the UI — this is a purely additive override layer, not a replacement.
+
+```php
+// AppServiceProvider (or any provider) — required, fail-closed by default:
+Gate::define('manage-ai-settings', fn ($user) => $user->isAdmin());
+```
+
+Without that Gate defined, **every** request to the Settings page is refused — there's no "everyone" mode for editing API keys, regardless of how the main chat's own access restriction is configured. Secrets are masked in the UI (last 4 characters only) and never overwritten unless you actually type a new value; blanking a field deletes the override and falls back to `.env` again.
+
+**Auth-gating the chat itself** is a separate, independent knob — public by default:
+
+```env
+AI_CHAT_MIDDLEWARE=auth   # require login for the whole /ai-chat area; leave unset for a public page
+```
 
 ## 💬 Chat UX & Personalization
 
@@ -796,6 +814,8 @@ Uses `Http::fake()` — no real API calls needed.
 | v2.0 | Analytics dashboard + webhooks | ✅ Released |
 | v2.0 | Bot profiles + embeddable floating widget | ✅ Released |
 | v2.0 | Image generation (Together AI / FLUX, via `/image`) | ✅ Released |
+| v2.0 | Provider Settings UI + auth guard for the chat area | ✅ Released |
+| v2.0 | Claude/ChatGPT-style message layout + responsive mobile UI | ✅ Released |
 | v2.1 | Function / Tool calling | 🔜 Planned |
 | v2.1 | Groq driver | 🔜 Planned |
 | v2.2 | Response caching | 🔜 Planned |

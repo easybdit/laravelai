@@ -110,6 +110,9 @@ class AIChatController extends Controller
             'captchaEnabled'      => (bool) config('ai.chat.captcha.enabled', false),
             'attachmentsEnabled'  => (bool) config('ai.chat.attachments.enabled', false),
             'disableStorage'      => (bool) config('ai.chat.disable_storage', false),
+            'canManageSettings'   => $request->user()
+                && \Illuminate\Support\Facades\Gate::forUser($request->user())
+                    ->allows(config('ai.chat.settings_gate', 'manage-ai-settings')),
         ]);
     }
 

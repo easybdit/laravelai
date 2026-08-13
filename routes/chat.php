@@ -6,11 +6,18 @@ use EasyAI\LaravelAI\Chat\Controllers\AnalyticsController;
 use EasyAI\LaravelAI\Chat\Controllers\ChatAttachmentController;
 use EasyAI\LaravelAI\Chat\Controllers\ProjectController;
 use EasyAI\LaravelAI\Chat\Controllers\ProjectFileController;
+use EasyAI\LaravelAI\Chat\Controllers\SettingsController;
 
 Route::prefix('ai-chat')->name('ai-chat.')->group(function () {
 
     Route::get('/', [AIChatController::class, 'index'])->name('index');
     Route::get('/analytics', [AnalyticsController::class, 'index'])->name('analytics');
+
+    // Auth + Gate-checked inside the controller (fail-closed) — kept out of
+    // the api/ group since these are pages, not JSON endpoints.
+    Route::get('/settings',  [SettingsController::class, 'edit'])->name('settings.edit');
+    Route::post('/settings', [SettingsController::class, 'update'])->name('settings.update');
+    Route::post('/settings/test', [SettingsController::class, 'test'])->name('settings.test');
 
     Route::prefix('api')->group(function () {
 

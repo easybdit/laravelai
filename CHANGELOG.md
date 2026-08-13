@@ -2,6 +2,21 @@
 
 ## v2.0.0 — 2026-08-13
 
+### 💬 Claude/ChatGPT-style message layout
+
+User turns are now a right-aligned bubble with no avatar; assistant turns stay left-aligned, full-width, with the avatar — matching the familiar Claude.ai/ChatGPT layout instead of the previous symmetric two-column chat-log look. Pure CSS on the existing markup (`flex-direction: row-reverse` for `.msg-row.user`), so both server-rendered history and the JS-appended live message use the same rules with no HTML changes.
+
+### ⚙️ Provider settings from the UI + auth guard
+
+Providers/API keys could previously only be changed by editing `.env`. New opt-in `/ai-chat/settings` admin page — change the default provider, every provider's API key/model/timeout, and test each connection live, without redeploying.
+
+- **`ai_settings` table** (new migration) is a generic key → value override store applied on top of `config()`/`.env` at boot (`SettingsOverlay`) — .env stays the source of truth for anyone who never opens the page; zero rows means zero behavior change.
+- **Fail-closed by design**, independent of the main chat's own access settings: refused unless the host app defines `Gate::define('manage-ai-settings', ...)` — there is no "everyone" mode for editing API keys, same pattern as the Commerce Store Assistant.
+- Secrets are **masked** in the UI (last 4 characters only) and never overwritten unless you actually type a new value; blanking a field deletes the override and falls back to `.env` again.
+- **`AI_CHAT_MIDDLEWARE`** — new config for the *main chat area* separately: empty (public page) by default, set to `auth` to require login for the whole `/ai-chat` app instead of only gating individual actions.
+
+7 new tests.
+
 ### 📱 Responsive chat UI
 
 The built-in chat UI was desktop-only — a fixed 260px sidebar with no mobile breakpoints, genuinely broken on a phone. Now:
