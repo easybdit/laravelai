@@ -30,19 +30,22 @@ use Illuminate\Support\Facades\Schema;
  *    doctrine/dbal required (this package doesn't depend on dbal). Real
  *    local SQLite runs confirm this path works.
  *  - Postgres: also `varchar(255) check ("status" in (...))` (see
- *    PostgresGrammar::typeEnum()) — but unlike SQLite, ->change() here
- *    was found live (real GitHub Actions Postgres service container, not
- *    a guess) to silently fail to actually widen the constraint: a
+ *    PostgresGrammar::typeEnum()) — but unlike SQLite, ->change() here was
+ *    found live (real GitHub Actions Postgres service container, not a
+ *    guess) to silently fail to actually widen the constraint: a
  *    dedicated regression test asserting a 'queued' status row can be
- *    created got a 500 (constraint violation) instead of 201, meaning
- *    the try/catch below WAS silently swallowing a real failure on this
- *    driver specifically, exactly the risk the class docblock warned
- *    about, now confirmed rather than theoretical. Fixed with direct
- *    DROP/ADD CONSTRAINT raw SQL instead of relying on ->change() for
- *    Postgres: an inline column-level CHECK constraint with no explicit
- *    name (what typeEnum() above generates) gets Postgres's own default
- *    auto-generated name, "{table}_{column}_check" — a stable, documented
- *    Postgres convention, not a Laravel implementation detail.
+ *    created got a 500 (a QueryException, confirmed with
+ *    withoutExceptionHandling() during debugging) instead of 201. A first
+ *    attempt at fixing this with direct DROP/ADD CONSTRAINT raw SQL,
+ *    guessing Postgres's default auto-generated constraint name
+ *    ("{table}_{column}_check") was *also* found live to fail the exact
+ *    same way — DROP CONSTRAINT IF EXISTS on a guessed name that doesn't
+ *    match the real one is a silent no-op, so the untouched original
+ *    constraint kept rejecting 'queued' right alongside the new
+ *    (correct, but redundant) constraint this added — Postgres enforces
+ *    every CHECK constraint on a column simultaneously, not just the
+ *    newest one. Fixed for real by looking the actual constraint name up
+ *    from pg_constraint instead of assuming it.
  */
 return new class extends Migration
 {
@@ -83,9 +86,33 @@ return new class extends Migration
         }
 
         if ($driver === 'pgsql') {
-            $constraint = "{$table}_status_check";
-            DB::statement("ALTER TABLE {$table} DROP CONSTRAINT IF EXISTS {$constraint}");
-            DB::statement("ALTER TABLE {$table} ADD CONSTRAINT {$constraint} CHECK (status IN ({$list}))");
+            // Don't guess Postgres's default constraint-naming convention —
+            // an earlier version of this migration assumed
+            // "{table}_status_check" and was wrong (or wrong on some PG
+            // version/config this wasn't tested against): DROP CONSTRAINT
+            // IF EXISTS on a name that doesn't match is a silent no-op, so
+            // the OLD constraint stayed in place right alongside the new
+            // one this added — and Postgres enforces every CHECK
+            // constraint on a column simultaneously, so 'queued' kept
+            // getting rejected by the untouched original regardless of
+            // what got added. Found live via a real Postgres service
+            // container after the name-guessing version still failed the
+            // exact same way. Look up every actual CHECK constraint on
+            // this table from the system catalog and drop all of them —
+            // there's only ever the one on this table — instead of
+            // assuming what it's called.
+            $constraints = DB::select(
+                "SELECT con.conname FROM pg_constraint con
+                 JOIN pg_class rel ON rel.oid = con.conrelid
+                 WHERE rel.relname = ? AND con.contype = 'c'",
+                [$table]
+            );
+
+            foreach ($constraints as $c) {
+                DB::statement("ALTER TABLE {$table} DROP CONSTRAINT \"{$c->conname}\"");
+            }
+
+            DB::statement("ALTER TABLE {$table} ADD CONSTRAINT {$table}_status_check CHECK (status IN ({$list}))");
             return;
         }
 
