@@ -302,7 +302,7 @@
             <div class="brand-icon">🤖</div>
             <div>
                 <div class="brand-name">LaravelAI Chat</div>
-                <div class="brand-sub">muradbdinfo/laravelai</div>
+                <div class="brand-sub">easybdit/laraveleasyai</div>
             </div>
         </div>
 
@@ -370,7 +370,7 @@
     </div>
 
     <div class="sidebar-footer">
-        <a href="https://packagist.org/packages/muradbdinfo/laravelai" target="_blank">muradbdinfo/laravelai</a>
+        <a href="https://packagist.org/packages/easybdit/laraveleasyai" target="_blank">easybdit/laraveleasyai</a>
         <span style="display:flex; gap:8px;">
             <a href="{{ route('ai-chat.analytics') }}" title="Analytics">📊</a>
             @if($canManageSettings ?? false)

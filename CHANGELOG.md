@@ -1,5 +1,17 @@
 # Changelog
 
+## v2.1.2 — 2026-08-14
+
+### 🐛 Fixed: guest chat history never persisted (reapplied)
+
+The guest-cookie regex fix from earlier — `ChatIdentity::resolve()` validating incoming cookies against the wrong character set (`/^[a-f0-9]{40}$/`, lowercase hex) when `ensureGuestToken()` actually mints mixed-case alphanumeric tokens via `Str::random(40)` — was written, tested, and confirmed live, but committed on a branch that got built off an old point in history and was never actually merged into `main`. Every release since then shipped with the bug still live. Reapplied cleanly: `/^[A-Za-z0-9]{40}$/`, plus its regression test (`tests/Unit/ChatIdentityTest.php`).
+
+### 🐛 Fixed: broken "view on Packagist" link in the chat sidebar
+
+The link at the bottom of the built-in chat UI's sidebar pointed at `packagist.org/packages/muradbdinfo/laravelai` — wrong vendor *and* wrong package name, a dead page. Now correctly points at `easybdit/laraveleasyai`, the real published package.
+
+---
+
 ## Unreleased (docs)
 
 - Fixed the banner graphic (`art/banner.svg`) still reading "LaravelEasyAI" — the brand became "LaravelAI" everywhere else (page title, badges, nav) a while ago; the SVG's own wordmark just hadn't been updated to match.
