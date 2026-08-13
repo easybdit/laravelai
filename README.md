@@ -31,7 +31,8 @@
   <a href="#-chat-ux--personalization">UX &amp; Widget</a> •
   <a href="#-providers">Providers</a> •
   <a href="#-api-reference">API Reference</a> •
-  <a href="#%EF%B8%8F-configuration">Configuration</a>
+  <a href="#%EF%B8%8F-configuration">Configuration</a> •
+  <a href="#-troubleshooting">Troubleshooting</a>
 </p>
 
 <p align="center">
@@ -211,6 +212,8 @@ php artisan vendor:publish --tag=ai-chat-views
 | POST   | `/ai-chat/api/rag/test` | Inspect matched chunks for a query |
 
 > `/ai-chat/api/stream` moved from GET to POST in v2.0.0 — a 4000-character message no longer risks the URL length limit, and the built-in view reads the response via `fetch()` + a manual SSE parser (not `EventSource`) so blocked/rate-limited JSON error responses are actually readable.
+
+> **v2.1.1** — `/ai-chat/api/stream` now survives replies that run long (a reasoning model thinking + writing a full answer can easily take a few minutes). Before this fix, a slow reply could hit your server's `max_execution_time` and vanish *after* the user had already watched it finish streaming — nothing showed as an error, it just wasn't there on the next page load. See [Troubleshooting → A reply appears while streaming, then disappears after reload](#a-reply-appears-while-streaming-then-disappears-after-reload) for the real example and the fix.
 
 ---
 
@@ -813,6 +816,53 @@ Uses `Http::fake()` — no real API calls needed.
 
 ---
 
+## 🩹 Troubleshooting
+
+Real problems, found and fixed on real installs — kept here with the actual example so the fix makes sense.
+
+### A reply appears while streaming, then disappears after reload
+
+**Symptom:** you ask a question, watch the AI's answer type itself out fully in the chat window — then reload the page (or come back later) and the reply is gone. Only your message is still there.
+
+**Real example this was found from** — a chat asking a local Ollama reasoning model (`qwen3:8b`) to explain "how to setup laravel 12 on windows xampp". The full answer streamed to the screen normally. The server's log told the real story:
+
+```
+[2026-08-13 23:42:01] local.ERROR: Maximum execution time of 300 seconds exceeded
+```
+
+...timestamped exactly 300 seconds after the question was sent. A reasoning model's reply (thinking + a long, detailed answer) can genuinely take that long, and PHP's `max_execution_time` (300s is XAMPP's typical default) doesn't care that the browser is happily still receiving data — once the clock runs out, PHP kills the script with an error that **cannot be caught in code**, wherever it happens to be running. That's always somewhere inside the AI request, never in the step right after it that saves the reply to your database. The user sees a complete answer; the database never gets it.
+
+**Fixed in v2.1.1** — `/ai-chat/api/stream` now lifts PHP's execution-time limit for itself (`set_time_limit(0)`) since it's a long-lived streaming response by design, not a normal page request, plus a backup save that still catches the reply even if the process dies for some *unrelated* reason. Nothing to configure — this is automatic as of v2.1.1.
+
+**One thing still outside the package's control:** if you're behind Nginx or Apache as a reverse proxy (not just XAMPP/`php artisan serve` directly), *the proxy itself* can also time out a slow request before PHP does, since removing PHP's own limit doesn't touch the web server's. If replies still cut off after upgrading, raise the proxy's read timeout too:
+
+```nginx
+# nginx — inside your site's location block
+fastcgi_read_timeout 600s;
+proxy_read_timeout   600s;
+```
+
+```apache
+# Apache — httpd.conf or a vhost config
+ProxyTimeout 600
+```
+
+### `/ai-chat` routes return HTML instead of JSON, or the chat window never loads
+
+Usually means a catch-all route in *your own* `routes/web.php` is registered before the package's routes and swallowing everything, `/ai-chat/*` included:
+
+```php
+// ❌ This shadows every package route, including its JSON APIs
+Route::get('/{any}', fn () => view('app'))->where('any', '.*');
+
+// ✅ Use fallback() instead — it only matches when nothing else did
+Route::fallback(fn () => view('app'));
+```
+
+This is common in SPA setups (Vue/React front ends living inside a Laravel app) where a wildcard route serves the SPA shell for client-side routing.
+
+---
+
 ## 🗺️ Roadmap
 
 | Version | Feature | Status |
@@ -829,10 +879,12 @@ Uses `Http::fake()` — no real API calls needed.
 | v2.0 | Analytics dashboard + webhooks | ✅ Released |
 | v2.0 | Bot profiles + embeddable floating widget | ✅ Released |
 | v2.0 | Image generation (Together AI / FLUX, via `/image`) | ✅ Released |
-| v2.0 | Provider Settings UI + auth guard for the chat area | ✅ Released |
-| v2.0 | Claude/ChatGPT-style message layout + responsive mobile UI | ✅ Released |
-| v2.0 | Multi-format export — PDF, Word, Excel, PowerPoint | ✅ Released |
-| v2.0 | Settings encryption at rest for provider API keys | ✅ Released |
+| v2.1 | Live "thinking" visibility for reasoning models (Ollama, Anthropic, Gemini) | ✅ Released |
+| v2.1 | Provider Settings UI + auth guard for the chat area | ✅ Released |
+| v2.1 | Claude/ChatGPT-style message layout + responsive mobile UI | ✅ Released |
+| v2.1 | Multi-format export — PDF, Word, Excel, PowerPoint | ✅ Released |
+| v2.1 | Settings encryption at rest for provider API keys | ✅ Released |
+| v2.1.1 | Fix — assistant replies no longer lost on long-running streams | ✅ Released |
 | v2.1 | Function / Tool calling | 🔜 Planned |
 | v2.1 | Groq driver | 🔜 Planned |
 | v2.2 | Response caching | 🔜 Planned |

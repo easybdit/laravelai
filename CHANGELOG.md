@@ -10,7 +10,7 @@ Found live: a reasoning model's reply (thinking + a long answer) can run past wh
 - Added a `register_shutdown_function` safety net that persists whatever content was generated if the script still dies unexpectedly for any *other* reason (memory limit, a proxy/web-server timeout PHP never even sees, etc.) — this closes the whole class of bug, not just the one specific trigger that was found.
 - The assistant-message save is now itself wrapped in a try/catch, so a transient DB error there can no longer become an uncaught exception that kills the response mid-stream.
 
-New regression test covers the catchable half of this (a DB-level failure on the save); the uncatchable PHP-fatal half was confirmed by reproducing it against a live server and re-running the same request after the fix.
+New regression test covers the catchable half of this (a DB-level failure on the save); the uncatchable PHP-fatal half was confirmed by reproducing it against a live server and re-running the same request after the fix. Also confirmed directly — logging `ini_get('max_execution_time')` immediately before and after the new `set_time_limit(0)` call on the same server showed `300` → `0` for that request, proving the fix actually neutralizes the exact setting that caused the original failure, not just that the retry happened to finish in time.
 
 ---
 
