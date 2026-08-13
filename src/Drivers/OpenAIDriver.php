@@ -2,6 +2,8 @@
 
 namespace EasyAI\LaravelAI\Drivers;
 
+use EasyAI\LaravelAI\Agent\Tool;
+use EasyAI\LaravelAI\Agent\ToolCall;
 use EasyAI\LaravelAI\Contracts\AIResponseInterface;
 use EasyAI\LaravelAI\Exceptions\ConnectionException;
 use EasyAI\LaravelAI\Exceptions\ProviderException;
@@ -35,6 +37,13 @@ class OpenAIDriver extends AbstractDriver
             $body['max_tokens'] = $maxTokens;
         }
 
+        if ($this->currentTools) {
+            $body['tools'] = array_map(fn (Tool $t) => [
+                'type'     => 'function',
+                'function' => ['name' => $t->name, 'description' => $t->description, 'parameters' => $t->parameters],
+            ], $this->currentTools);
+        }
+
         $this->log('Request', ['model' => $this->currentModel, 'messages_count' => count($messages)]);
 
         try {
@@ -56,14 +65,26 @@ class OpenAIDriver extends AbstractDriver
             }
 
             $data = $response->json();
+            $message = $data['choices'][0]['message'] ?? [];
+
+            $toolCalls = [];
+            foreach ($message['tool_calls'] ?? [] as $tc) {
+                $toolCalls[] = new ToolCall(
+                    id:        $tc['id'] ?? null,
+                    name:      $tc['function']['name'] ?? '',
+                    arguments: json_decode($tc['function']['arguments'] ?? '', true) ?: [],
+                );
+            }
 
             $result = new AIResponse(
-                content:          $data['choices'][0]['message']['content'] ?? '',
-                promptTokens:     $data['usage']['prompt_tokens'] ?? 0,
-                completionTokens: $data['usage']['completion_tokens'] ?? 0,
-                model:            $data['model'] ?? $this->currentModel,
-                provider:         $this->getProviderName(),
-                raw:              $data,
+                content:             $message['content'] ?? '',
+                promptTokens:        $data['usage']['prompt_tokens'] ?? 0,
+                completionTokens:    $data['usage']['completion_tokens'] ?? 0,
+                model:               $data['model'] ?? $this->currentModel,
+                provider:            $this->getProviderName(),
+                raw:                 $data,
+                toolCalls:           $toolCalls,
+                rawAssistantMessage: $message,
             );
 
             $this->log('Response', ['tokens' => $result->getTotalTokens()]);
@@ -143,6 +164,24 @@ class OpenAIDriver extends AbstractDriver
             provider:         $this->getProviderName(),
             raw:              [],
         );
+    }
+
+    /**
+     * @param array{call: ToolCall, result: mixed}[] $results
+     */
+    protected function appendToolExchange(array $messages, AIResponseInterface $response, array $results): array
+    {
+        $messages[] = $response->getRawAssistantMessage() ?? ['role' => 'assistant', 'content' => $response->getContent()];
+
+        foreach ($results as $r) {
+            $messages[] = [
+                'role'         => 'tool',
+                'tool_call_id' => $r['call']->id,
+                'content'      => is_string($r['result']) ? $r['result'] : json_encode($r['result']),
+            ];
+        }
+
+        return $messages;
     }
 
     public function health(): bool

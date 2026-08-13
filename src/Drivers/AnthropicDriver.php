@@ -2,6 +2,8 @@
 
 namespace EasyAI\LaravelAI\Drivers;
 
+use EasyAI\LaravelAI\Agent\Tool;
+use EasyAI\LaravelAI\Agent\ToolCall;
 use EasyAI\LaravelAI\Contracts\AIResponseInterface;
 use EasyAI\LaravelAI\Exceptions\ConnectionException;
 use EasyAI\LaravelAI\Exceptions\ProviderException;
@@ -51,6 +53,14 @@ class AnthropicDriver extends AbstractDriver
 
         $body['max_tokens'] = $maxTokens;
 
+        if ($this->currentTools) {
+            $body['tools'] = array_map(fn (Tool $t) => [
+                'name'         => $t->name,
+                'description'  => $t->description,
+                'input_schema' => $t->parameters,
+            ], $this->currentTools);
+        }
+
         $this->log('Request', ['model' => $this->currentModel, 'messages_count' => count($formatted['messages'])]);
 
         try {
@@ -77,21 +87,32 @@ class AnthropicDriver extends AbstractDriver
 
             $data = $response->json();
 
-            // Extract text from content blocks
+            // Extract text and tool_use blocks. content can hold both (e.g. a
+            // model "thinking out loud" in text before calling a tool), and
+            // there can be more than one tool_use block (parallel tool calls).
             $content = '';
+            $toolCalls = [];
             foreach ($data['content'] ?? [] as $block) {
                 if (($block['type'] ?? '') === 'text') {
                     $content .= $block['text'];
+                } elseif (($block['type'] ?? '') === 'tool_use') {
+                    $toolCalls[] = new ToolCall(
+                        id:        $block['id'] ?? null,
+                        name:      $block['name'] ?? '',
+                        arguments: $block['input'] ?? [],
+                    );
                 }
             }
 
             $result = new AIResponse(
-                content:          $content,
-                promptTokens:     $data['usage']['input_tokens'] ?? 0,
-                completionTokens: $data['usage']['output_tokens'] ?? 0,
-                model:            $data['model'] ?? $this->currentModel,
-                provider:         'anthropic',
-                raw:              $data,
+                content:             $content,
+                promptTokens:        $data['usage']['input_tokens'] ?? 0,
+                completionTokens:    $data['usage']['output_tokens'] ?? 0,
+                model:               $data['model'] ?? $this->currentModel,
+                provider:            'anthropic',
+                raw:                 $data,
+                toolCalls:           $toolCalls,
+                rawAssistantMessage: $data['content'] ?? [],
             );
 
             $this->log('Response', ['tokens' => $result->getTotalTokens()]);
@@ -199,6 +220,26 @@ class AnthropicDriver extends AbstractDriver
             provider:         'anthropic',
             raw:              [],
         );
+    }
+
+    /**
+     * @param array{call: ToolCall, result: mixed}[] $results
+     */
+    protected function appendToolExchange(array $messages, AIResponseInterface $response, array $results): array
+    {
+        $messages[] = ['role' => 'assistant', 'content' => $response->getRawAssistantMessage() ?? []];
+
+        $toolResultBlocks = [];
+        foreach ($results as $r) {
+            $toolResultBlocks[] = [
+                'type'        => 'tool_result',
+                'tool_use_id' => $r['call']->id,
+                'content'     => is_string($r['result']) ? $r['result'] : json_encode($r['result']),
+            ];
+        }
+        $messages[] = ['role' => 'user', 'content' => $toolResultBlocks];
+
+        return $messages;
     }
 
     public function health(): bool

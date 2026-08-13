@@ -2,6 +2,8 @@
 
 namespace EasyAI\LaravelAI\Drivers;
 
+use EasyAI\LaravelAI\Agent\Tool;
+use EasyAI\LaravelAI\Agent\ToolCall;
 use EasyAI\LaravelAI\Contracts\AIResponseInterface;
 use EasyAI\LaravelAI\Exceptions\ConnectionException;
 use EasyAI\LaravelAI\Exceptions\ProviderException;
@@ -28,27 +30,49 @@ class GeminiDriver extends AbstractDriver
     private function toGeminiContents(array $messages): array
     {
         $system = null;
-        $filtered = [];
+        $contents = [];
 
         foreach ($messages as $msg) {
             if (($msg['role'] ?? '') === 'system') {
                 $system = $system ? $system . "\n\n" . $msg['content'] : $msg['content'];
                 continue;
             }
-            $filtered[] = $msg;
+
+            $role = ($msg['role'] ?? 'user') === 'assistant' ? 'model' : 'user';
+
+            // Appended by appendToolExchange() below — already a raw Gemini
+            // parts array (functionCall/functionResponse), not text/image
+            // content needing MessageFormatter's translation. Handled
+            // per-message (not batched through toProviderContent()) so
+            // these can sit right where they belong in the conversation
+            // without disturbing the translation of every other message.
+            if (!empty($msg['_gemini_native'])) {
+                $contents[] = ['role' => $role, 'parts' => $msg['content']];
+                continue;
+            }
+
+            $translated = MessageFormatter::toProviderContent([$msg], 'gemini')[0];
+            $parts = is_array($translated['content']) ? $translated['content'] : [['text' => (string) $translated['content']]];
+            $contents[] = ['role' => $role, 'parts' => $parts];
         }
 
-        $filtered = MessageFormatter::toProviderContent($filtered, 'gemini');
-
-        $contents = array_map(function ($msg) {
-            $parts = is_array($msg['content']) ? $msg['content'] : [['text' => (string) $msg['content']]];
-            return [
-                'role'  => ($msg['role'] ?? 'user') === 'assistant' ? 'model' : 'user',
-                'parts' => $parts,
-            ];
-        }, $filtered);
-
         return ['system' => $system, 'contents' => $contents];
+    }
+
+    /** @param Tool[] $tools */
+    private function toGeminiTools(array $tools): array
+    {
+        if (empty($tools)) {
+            return [];
+        }
+
+        return [[
+            'function_declarations' => array_map(fn (Tool $t) => [
+                'name'        => $t->name,
+                'description' => $t->description,
+                'parameters'  => $t->parameters,
+            ], $tools),
+        ]];
     }
 
     private function baseBody(array $formatted): array
@@ -77,6 +101,10 @@ class GeminiDriver extends AbstractDriver
 
         if ($generationConfig) {
             $body['generationConfig'] = $generationConfig;
+        }
+
+        if ($this->currentTools) {
+            $body['tools'] = $this->toGeminiTools($this->currentTools);
         }
 
         return $body;
@@ -114,19 +142,32 @@ class GeminiDriver extends AbstractDriver
 
             $data = $response->json();
             $content = '';
-            foreach ($data['candidates'][0]['content']['parts'] ?? [] as $part) {
-                if (empty($part['thought'])) {
+            $toolCalls = [];
+            $parts = $data['candidates'][0]['content']['parts'] ?? [];
+
+            foreach ($parts as $part) {
+                if (isset($part['functionCall'])) {
+                    // Gemini doesn't assign an id to function calls — matched
+                    // by name/position in appendToolExchange() instead.
+                    $toolCalls[] = new ToolCall(
+                        id:        null,
+                        name:      $part['functionCall']['name'] ?? '',
+                        arguments: $part['functionCall']['args'] ?? [],
+                    );
+                } elseif (empty($part['thought'])) {
                     $content .= $part['text'] ?? '';
                 }
             }
 
             $result = new AIResponse(
-                content:          $content,
-                promptTokens:     $data['usageMetadata']['promptTokenCount'] ?? 0,
-                completionTokens: $data['usageMetadata']['candidatesTokenCount'] ?? 0,
-                model:            $this->currentModel,
-                provider:         'gemini',
-                raw:              $data,
+                content:             $content,
+                promptTokens:        $data['usageMetadata']['promptTokenCount'] ?? 0,
+                completionTokens:    $data['usageMetadata']['candidatesTokenCount'] ?? 0,
+                model:               $this->currentModel,
+                provider:            'gemini',
+                raw:                 $data,
+                toolCalls:           $toolCalls,
+                rawAssistantMessage: $parts,
             );
 
             $this->log('Response', ['tokens' => $result->getTotalTokens()]);
@@ -244,5 +285,38 @@ class GeminiDriver extends AbstractDriver
         } catch (\Throwable) {
             return [];
         }
+    }
+
+    /**
+     * @param array{call: ToolCall, result: mixed}[] $results
+     */
+    protected function appendToolExchange(array $messages, AIResponseInterface $response, array $results): array
+    {
+        // The model's turn: replay its exact functionCall part(s) back
+        // verbatim (rawAssistantMessage), not a reconstruction from
+        // getContent() — a tool-call-only turn has empty text content.
+        $messages[] = [
+            'role'            => 'assistant',
+            'content'         => $response->getRawAssistantMessage() ?? [],
+            '_gemini_native'  => true,
+        ];
+
+        $responseParts = [];
+        foreach ($results as $r) {
+            $responseParts[] = [
+                'functionResponse' => [
+                    'name'     => $r['call']->name,
+                    'response' => is_array($r['result']) ? $r['result'] : ['result' => $r['result']],
+                ],
+            ];
+        }
+
+        $messages[] = [
+            'role'           => 'user',
+            'content'        => $responseParts,
+            '_gemini_native' => true,
+        ];
+
+        return $messages;
     }
 }

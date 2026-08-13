@@ -95,6 +95,12 @@ class MessageFormatter
                     $blocks[] = self::textBlock($block['text'], $provider);
                 } elseif (($block['type'] ?? '') === 'image') {
                     $blocks[] = self::imageBlock($block['mime'], $block['data'], $provider);
+                } else {
+                    // Unknown block type (e.g. Anthropic's tool_use/tool_result,
+                    // already in that provider's native wire shape courtesy of
+                    // AbstractDriver::run()'s appendToolExchange()) — pass through
+                    // unchanged rather than silently dropping it.
+                    $blocks[] = $block;
                 }
             }
             $msg['content'] = $blocks;

@@ -38,4 +38,25 @@ interface AIProviderInterface
     public function embed(string|array $input): array;
 
     public function getProviderName(): string;
+
+    /**
+     * Sets the tools available for the *next* call — chat()/run() will
+     * include them on the outgoing request in this provider's own wire
+     * format. Cleared after each call, same lifecycle as every other
+     * per-request override (model, temperature, etc.).
+     *
+     * @param \EasyAI\LaravelAI\Agent\Tool[] $tools
+     */
+    public function tools(array $tools): static;
+
+    /**
+     * The agent loop: sends $messages with the tools set via tools(),
+     * and — as long as the model keeps asking to call one — executes the
+     * matching Tool's handler and feeds the result back, up to $maxSteps
+     * round-trips. Returns the first response with no further tool calls
+     * (or the last response, with whatever it has, if $maxSteps is hit —
+     * an agent that can't finish shouldn't loop forever, but it also
+     * shouldn't throw away a partial answer).
+     */
+    public function run(array $messages, int $maxSteps = 5): AIResponseInterface;
 }

@@ -19,4 +19,9 @@ interface AIResponseInterface
     public function getRaw(): array;
 
     public function toArray(): array;
+
+    /** @return \EasyAI\LaravelAI\Agent\ToolCall[] */
+    public function getToolCalls(): array;
+
+    public function hasToolCalls(): bool;
 }

@@ -1,5 +1,29 @@
 # Changelog
 
+## v2.5.0 — 2026-08-14
+
+### 🧰 Agent Module — tool/function calling across every provider
+
+The biggest gap versus other AI packages: until now this was a chat wrapper, not something that could act. `AI::provider(...)->tools([...])->run($messages)` gives any provider the ability to call real PHP functions mid-conversation and keep going until it has an actual answer — one `Tool` shape (`EasyAI\LaravelAI\Agent\Tool`), translated into each provider's own wire format under the hood.
+
+- Works identically across **OpenAI, Anthropic, Gemini, and Ollama** — plus DeepSeek, Together AI, and any custom OpenAI-compatible endpoint, which inherit it for free from the OpenAI driver.
+- `run()` drives the whole loop non-streaming: sends the conversation with the tools attached, and as long as the model keeps asking to call one, executes the matching handler and feeds the result back — up to a configurable `maxSteps` (default 5) so an agent that can't converge doesn't loop forever.
+- A tool handler that throws doesn't crash the run — the model sees `{"error": "..."}` and can try something else or explain the failure, same "never let one flaky piece take down the whole request" philosophy as the RAG/Commerce work.
+- Found and fixed a real bug while building this: `MessageFormatter::toProviderContent()` silently **dropped** any content block whose type wasn't `text` or `image` — which would have corrupted Anthropic's `tool_use`/`tool_result` blocks on every round after the first tool call. Caught by a dedicated test asserting the actual JSON body sent to the API, not just the response handling.
+
+### 🔍 Built-in web search tool
+
+The one tool most agents need first. `EasyAI\LaravelAI\Agent\Tools\WebSearchTool::make()` is ready to hand straight to `->tools([...])`, backed by a pluggable `WebSearchProvider` contract — bind your own backend, or use one of two built-ins that both ship with genuinely free tiers:
+
+- **Tavily** (default) — built specifically for AI-agent tool use, 1,000 free searches/month, no card required.
+- **Brave Search API** — a solid alternative, also has a free tier.
+
+No key configured and nothing bound? The tool degrades to a "no results / not configured" message rather than failing the whole run.
+
+17 new tests for the agent core across all four providers (tool-call parsing, full round-trip execution, `maxSteps` enforcement, unknown-tool graceful handling) + 10 new tests for the web search providers/tool. 142/142 passing overall.
+
+---
+
 ## v2.4.0 — 2026-08-14
 
 ### 🛍️ Commerce Assistants — schema-agnostic Product Q&A, Order Status, Ask Your Store

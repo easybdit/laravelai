@@ -31,6 +31,7 @@
   <a href="#-chat-ux--personalization">UX &amp; Widget</a> •
   <a href="#-commerce-assistants">Commerce</a> •
   <a href="#-providers">Providers</a> •
+  <a href="#-agent-module--tool--function-calling">Agent &amp; Tools</a> •
   <a href="#-api-reference">API Reference</a> •
   <a href="#%EF%B8%8F-configuration">Configuration</a> •
   <a href="#-troubleshooting">Troubleshooting</a> •
@@ -721,6 +722,87 @@ AI::custom('lmstudio')->chat($messages);
 
 ---
 
+## 🧰 Agent Module — Tool / Function Calling
+
+Give any provider the ability to call your own PHP functions mid-conversation — look something up, run a calculation, hit an API — and keep going until it has a real answer. Works identically across **OpenAI, Anthropic, Gemini, and Ollama** (plus DeepSeek/Together/any custom OpenAI-compatible endpoint, which inherit it from the OpenAI driver): one `Tool` shape, translated into each provider's own wire format under the hood.
+
+### A tool in three lines
+
+```php
+use EasyAI\LaravelAI\Agent\Tool;
+
+$weather = Tool::make(
+    name: 'get_weather',
+    description: 'Get the current weather for a city.',
+    parameters: ['type' => 'object', 'properties' => ['city' => ['type' => 'string']], 'required' => ['city']],
+    handler: fn (array $args) => ['temp_c' => 22, 'condition' => 'Sunny'], // call a real API here
+);
+```
+
+### Run it
+
+```php
+$response = AI::provider('openai')->tools([$weather])->run([
+    ['role' => 'user', 'content' => 'What is the weather in Paris?'],
+]);
+
+echo $response->content;
+// "It's currently 22°C and sunny in Paris."
+```
+
+`run()` (not `chat()`) drives the whole loop: sends your message, and — as long as the model keeps asking to call a tool — executes the matching handler and feeds the result back, up to 5 round-trips by default (`AI::provider('openai')->tools([$weather])->run($messages, maxSteps: 10)` to raise it). A handler that throws doesn't crash the run; the model just sees `{"error": "..."}` and can try something else or explain the failure.
+
+### Multiple tools, and inspecting what happened
+
+```php
+$response = AI::provider('anthropic')->tools([$weather, $calculator])->run($messages);
+
+echo $response->content;                 // the final answer
+$response->hasToolCalls();               // false on the final turn (that's how run() knows to stop)
+```
+
+### 🔍 Built-in web search tool
+
+The one tool most agents actually need first — give the model real, current information instead of only what was in its training data.
+
+```php
+use EasyAI\LaravelAI\Agent\Tools\WebSearchTool;
+
+$response = AI::provider('openai')
+    ->tools([WebSearchTool::make()])
+    ->run([['role' => 'user', 'content' => 'What happened in the news today about Laravel?']]);
+```
+
+Backed by a pluggable `WebSearchProvider` contract — two work out of the box, both with genuinely free tiers, pick whichever you already have a key for:
+
+```env
+AI_WEB_SEARCH_PROVIDER=tavily   # or "brave"
+AI_TAVILY_API_KEY=tvly-...      # https://tavily.com — 1,000 free searches/month
+# AI_BRAVE_API_KEY=...          # https://brave.com/search/api — also has a free tier
+```
+
+No key configured and nothing bound? The tool degrades to a "no results / not configured" message rather than failing the whole run — an agent missing one capability should say so, not crash. Want your own backend entirely (a self-hosted search index, a different vendor)? Bind it like any other resolver in this package:
+
+```php
+$this->app->bind(
+    \EasyAI\LaravelAI\Agent\Contracts\WebSearchProvider::class,
+    \App\Services\MySearchProvider::class // implements search(string $query, int $limit): array
+);
+```
+
+### What each provider actually supports
+
+| Provider | Tool calling | Notes |
+|---|---|---|
+| OpenAI | ✅ | Also covers DeepSeek, Together AI, and any custom OpenAI-compatible endpoint |
+| Anthropic (Claude) | ✅ | Supports parallel tool calls (multiple in one turn) |
+| Google Gemini | ✅ | |
+| Ollama | ✅ | Model-dependent — needs a tool-calling-capable model (e.g. `qwen3`, `llama3.1`); older/smaller models may ignore the tools list entirely |
+
+**Scope note:** `run()` is non-streaming by design — an agent loop's intermediate tool-call decisions aren't meaningfully "typed out" character by character the way a final answer is, so this uses the same request/response `chat()` path under the hood, not `stream()`. Streaming a tool-calling agent's *final* answer after the loop resolves is on the roadmap.
+
+---
+
 ## ✨ Features
 
 ### Fluent Builder API
@@ -955,6 +1037,18 @@ AI_CHAT_ATTACHMENTS_ENABLED=false
 # Webhook (v2.0.0)
 AI_CHAT_WEBHOOK_URL=
 AI_CHAT_WEBHOOK_SECRET=
+
+# Commerce Assistants (v2.4.0)
+AI_COMMERCE_PROVIDER=
+AI_COMMERCE_GATE=view-store-assistant
+AI_COMMERCE_PRODUCT_LIMIT=4
+
+# Agent module — tool/function calling + built-in web search (v2.5.0)
+AI_AGENT_MAX_STEPS=5
+AI_WEB_SEARCH_PROVIDER=tavily
+AI_WEB_SEARCH_LIMIT=5
+AI_TAVILY_API_KEY=
+AI_BRAVE_API_KEY=
 ```
 
 ---
@@ -1080,8 +1174,10 @@ Either way, the sidebar's identity line and the Settings page's Gate (`manage-ai
 | v2.2 | Fix — Projects had no ownership scoping at all | ✅ Released |
 | v2.3 | RAG search scans in bounded batches instead of loading the entire corpus | ✅ Released |
 | v2.4 | Commerce assistants — schema-agnostic Product Q&A, Order Status, Ask Your Store | ✅ Released |
-| v2.5 | Function / Tool calling | 🔜 Planned |
-| v2.5 | Groq driver | 🔜 Planned |
+| v2.5 | Agent module — function/tool calling (OpenAI, Anthropic, Gemini, Ollama) | ✅ Released |
+| v2.5 | Built-in web search tool (Tavily / Brave, pluggable) | ✅ Released |
+| v2.6 | Groq driver | 🔜 Planned |
+| v2.6 | Streaming the agent module's final answer after the tool-call loop resolves | 🔜 Planned |
 | v2.6 | Response caching | 🔜 Planned |
 | v2.6 | Pluggable vector-store backend (pgvector, etc.) for large RAG corpora | 🔜 Planned |
 

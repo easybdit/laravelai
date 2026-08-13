@@ -325,6 +325,56 @@ return [
         'product_search_limit' => (int) env('AI_COMMERCE_PRODUCT_LIMIT', 4),
     ],
 
+    /**
+     * The agent module — tool/function calling. Any provider driver can
+     * take a list of \EasyAI\LaravelAI\Agent\Tool instances via ->tools()
+     * and run an agentic loop via ->run($messages) instead of a single
+     * ->chat() call: as long as the model keeps asking to call a tool,
+     * the matching Tool's handler is executed and its result fed back,
+     * up to a configurable number of round-trips.
+     *
+     *   use EasyAI\LaravelAI\Agent\Tool;
+     *   use EasyAI\LaravelAI\Agent\Tools\WebSearchTool;
+     *
+     *   $weather = Tool::make('get_weather', 'Get current weather for a city',
+     *       ['type' => 'object', 'properties' => ['city' => ['type' => 'string']], 'required' => ['city']],
+     *       fn (array $args) => MyWeatherService::lookup($args['city'])
+     *   );
+     *
+     *   $result = AI::provider('openai')->tools([$weather, WebSearchTool::make()])->run($messages);
+     */
+    'agent' => [
+        'max_steps' => (int) env('AI_AGENT_MAX_STEPS', 5),
+
+        /**
+         * Built-in web search tool (EasyAI\LaravelAI\Agent\Tools\WebSearchTool)
+         * — gives any provider real-time web results as a tool call. Backed by
+         * a pluggable EasyAI\LaravelAI\Agent\Contracts\WebSearchProvider; bind
+         * your own implementation to use a different backend entirely:
+         *
+         *   $this->app->bind(WebSearchProvider::class, MySearchProvider::class);
+         *
+         * Two built-in providers ship out of the box, both with genuinely free
+         * tiers — pick whichever you already have a key for. Neither is
+         * required: with no key configured (and nothing bound), the tool
+         * degrades to "no results / not configured" rather than failing the
+         * whole agent run.
+         */
+        'web_search' => [
+            'provider' => env('AI_WEB_SEARCH_PROVIDER', 'tavily'), // 'tavily' or 'brave'
+            'limit'    => (int) env('AI_WEB_SEARCH_LIMIT', 5),
+
+            'tavily' => [
+                'api_key' => env('AI_TAVILY_API_KEY'),
+                'url'     => env('AI_TAVILY_URL', 'https://api.tavily.com/search'),
+            ],
+            'brave' => [
+                'api_key' => env('AI_BRAVE_API_KEY'),
+                'url'     => env('AI_BRAVE_URL', 'https://api.search.brave.com/res/v1/web/search'),
+            ],
+        ],
+    ],
+
     'logging' => [
         'enabled' => (bool) env('AI_LOG_ENABLED', false),
         'channel' => env('AI_LOG_CHANNEL', 'stack'),

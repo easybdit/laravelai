@@ -2,6 +2,8 @@
 
 namespace EasyAI\LaravelAI\Drivers;
 
+use EasyAI\LaravelAI\Agent\Tool;
+use EasyAI\LaravelAI\Agent\ToolCall;
 use EasyAI\LaravelAI\Contracts\AIResponseInterface;
 use EasyAI\LaravelAI\Exceptions\ConnectionException;
 use EasyAI\LaravelAI\Exceptions\ProviderException;
@@ -47,6 +49,13 @@ class OllamaDriver extends AbstractDriver
             $body['think'] = $think;
         }
 
+        if ($this->currentTools) {
+            $body['tools'] = array_map(fn (Tool $t) => [
+                'type'     => 'function',
+                'function' => ['name' => $t->name, 'description' => $t->description, 'parameters' => $t->parameters],
+            ], $this->currentTools);
+        }
+
         $this->log('Request', ['model' => $this->currentModel, 'messages_count' => count($messages)]);
 
         try {
@@ -67,14 +76,28 @@ class OllamaDriver extends AbstractDriver
             }
 
             $data = $response->json();
+            $message = $data['message'] ?? [];
+
+            $toolCalls = [];
+            foreach ($message['tool_calls'] ?? [] as $tc) {
+                // Ollama doesn't assign call ids, and unlike OpenAI its
+                // "arguments" is already a parsed object/array, not a JSON string.
+                $toolCalls[] = new ToolCall(
+                    id:        null,
+                    name:      $tc['function']['name'] ?? '',
+                    arguments: $tc['function']['arguments'] ?? [],
+                );
+            }
 
             $result = new AIResponse(
-                content:          $data['message']['content'] ?? '',
-                promptTokens:     $data['prompt_eval_count'] ?? $this->estimateTokens(json_encode($messages)),
-                completionTokens: $data['eval_count'] ?? $this->estimateTokens($data['message']['content'] ?? ''),
-                model:            $data['model'] ?? $this->currentModel,
-                provider:         'ollama',
-                raw:              $data,
+                content:             $message['content'] ?? '',
+                promptTokens:        $data['prompt_eval_count'] ?? $this->estimateTokens(json_encode($messages)),
+                completionTokens:    $data['eval_count'] ?? $this->estimateTokens($message['content'] ?? ''),
+                model:               $data['model'] ?? $this->currentModel,
+                provider:            'ollama',
+                raw:                 $data,
+                toolCalls:           $toolCalls,
+                rawAssistantMessage: $message,
             );
 
             $this->log('Response', ['tokens' => $result->getTotalTokens()]);
@@ -94,6 +117,23 @@ class OllamaDriver extends AbstractDriver
                 $e
             );
         }
+    }
+
+    /**
+     * @param array{call: ToolCall, result: mixed}[] $results
+     */
+    protected function appendToolExchange(array $messages, AIResponseInterface $response, array $results): array
+    {
+        $messages[] = $response->getRawAssistantMessage() ?? ['role' => 'assistant', 'content' => $response->getContent()];
+
+        foreach ($results as $r) {
+            $messages[] = [
+                'role'    => 'tool',
+                'content' => is_string($r['result']) ? $r['result'] : json_encode($r['result']),
+            ];
+        }
+
+        return $messages;
     }
 
     /**

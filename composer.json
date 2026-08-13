@@ -1,6 +1,6 @@
 {
     "name": "easybdit/laraveleasyai",
-    "version": "2.4.0",
+    "version": "2.5.0",
     "description": "Unified AI chat for Laravel — Ollama, OpenAI, Anthropic (Claude), DeepSeek. One interface, any AI.",
     "keywords": [
         "laravel", "ai", "ollama", "openai", "anthropic",
@@ -8,7 +8,8 @@
         "artificial-intelligence", "chat", "streaming",
         "laravel-package", "php-ai", "machine-learning",
         "rag", "projects", "knowledge-base",
-        "ecommerce", "commerce", "chatbot", "vector-search"
+        "ecommerce", "commerce", "chatbot", "vector-search",
+        "agent", "agents", "function-calling", "tool-calling", "gemini", "web-search"
     ],
     "license": "MIT",
     "authors": [

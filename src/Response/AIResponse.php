@@ -2,6 +2,7 @@
 
 namespace EasyAI\LaravelAI\Response;
 
+use EasyAI\LaravelAI\Agent\ToolCall;
 use EasyAI\LaravelAI\Contracts\AIResponseInterface;
 
 /**
@@ -11,9 +12,20 @@ use EasyAI\LaravelAI\Contracts\AIResponseInterface;
  * @property-read int    $totalTokens
  * @property-read string $model
  * @property-read string $provider
+ * @property-read ToolCall[] $toolCalls
  */
 class AIResponse implements AIResponseInterface
 {
+    /**
+     * @param ToolCall[] $toolCalls Tool invocations the model asked for — empty means
+     *                              this is a final answer, not a request to call anything.
+     * @param mixed      $rawAssistantMessage Provider-native shape of this turn (e.g. Anthropic's
+     *                              full content-blocks array, OpenAI's message object with
+     *                              tool_calls) — opaque to callers, only meaningful when a
+     *                              driver replays it back into the next request in an agent
+     *                              loop. Null when not applicable (no tool calls, or a driver
+     *                              that doesn't need it).
+     */
     public function __construct(
         protected string $content,
         protected int    $promptTokens,
@@ -21,6 +33,8 @@ class AIResponse implements AIResponseInterface
         protected string $model,
         protected string $provider,
         protected array  $raw = [],
+        protected array  $toolCalls = [],
+        protected mixed  $rawAssistantMessage = null,
     ) {}
 
     public function __get(string $name): mixed
@@ -32,8 +46,25 @@ class AIResponse implements AIResponseInterface
             'totalTokens'      => $this->getTotalTokens(),
             'model'            => $this->model,
             'provider'         => $this->provider,
+            'toolCalls'        => $this->toolCalls,
             default            => null,
         };
+    }
+
+    /** @return ToolCall[] */
+    public function getToolCalls(): array
+    {
+        return $this->toolCalls;
+    }
+
+    public function hasToolCalls(): bool
+    {
+        return !empty($this->toolCalls);
+    }
+
+    public function getRawAssistantMessage(): mixed
+    {
+        return $this->rawAssistantMessage;
     }
 
     public function getContent(): string
