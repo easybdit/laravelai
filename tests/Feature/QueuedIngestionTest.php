@@ -75,6 +75,11 @@ class QueuedIngestionTest extends TestCase
 
     public function test_queued_config_dispatches_the_ingest_job_and_marks_the_file_queued(): void
     {
+        // TEMPORARY diagnostic — surfaces the real exception behind a 500
+        // that's otherwise invisible through GitHub's unauthenticated-log
+        // wall; remove once the underlying Postgres issue is confirmed fixed.
+        $this->withoutExceptionHandling();
+
         config(['ai.rag.queue_ingestion' => true]);
         Queue::fake();
         $this->fakeEmbedEndpoint();
