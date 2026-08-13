@@ -7,6 +7,8 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class ProjectFile extends Model
 {
+    protected $table = 'ai_project_files';
+
     protected $fillable = [
         'project_id',
         'original_name',

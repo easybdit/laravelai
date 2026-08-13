@@ -1,5 +1,22 @@
 # Changelog
 
+## v2.4.0 — 2026-08-14
+
+### 🛍️ Commerce Assistants — schema-agnostic Product Q&A, Order Status, Ask Your Store
+
+Three AI endpoints for a storefront, built entirely on three PHP interfaces instead of any concrete e-commerce schema — creates **zero database tables**, so it can't collide with WooCommerce, a custom Eloquent catalog, or any other package. Host apps bind their own resolver implementation; unbound endpoints return a clear `501` instead of guessing at a schema.
+
+- `ProductResolver` / `OrderResolver` / `StoreAnalyticsResolver` contracts — implement the one(s) you need, bind in your `AppServiceProvider`.
+- `POST /ai-chat/api/commerce/products/ask`, `/orders/ask`, `/store-assistant` — all reuse `ChatGuard`'s rate limiting / message-length / word-filter / prompt-injection checks.
+- The Store Assistant is **fail-closed**, same pattern as the Settings UI — refused unless the host app explicitly defines `Gate::define('view-store-assistant', ...)`.
+- Order status verification is delegated entirely to the resolver — a wrong email never reveals whether an order even exists.
+
+This recovers real, tested work that had been sitting on an unmerged branch — including a correctness fix over the original attempt: the `projects`/`project_files` tables (renamed here to `ai_projects`/`ai_project_files` for the same namespace-safety reason) get a proper `Schema::rename()` migration instead of an edited-in-place original migration, since those tables already shipped in v1.4.0 and a content edit to an already-ran migration does nothing for existing installs.
+
+12 new tests (4 parser unit tests + 8 end-to-end commerce tests against fake in-memory resolvers) — 115/115 passing overall.
+
+---
+
 ## v2.3.0 — 2026-08-14
 
 ### ⚡ RAG search no longer loads the entire corpus into memory

@@ -305,6 +305,26 @@ return [
         'bot_profiles' => [],
     ],
 
+    /**
+     * Schema-agnostic commerce assistants — "Ask Your Store", product
+     * Q&A/finder, and order status. This package creates no e-commerce
+     * tables and assumes no particular catalog/order shape; bind your own
+     * implementation of the three interfaces in src/Commerce/Contracts to
+     * an app service provider:
+     *
+     *   $this->app->bind(\EasyAI\LaravelAI\Commerce\Contracts\ProductResolver::class, MyProductResolver::class);
+     *
+     * Every endpoint returns a clear 501 until its resolver is bound.
+     */
+    'commerce' => [
+        'provider'             => env('AI_COMMERCE_PROVIDER'), // null = use ai.default
+        // Store Assistant is fail-closed: define this Gate yourself
+        // (Gate::define('view-store-assistant', fn ($user) => $user->isAdmin());)
+        // — until you do, every request is refused regardless of auth state.
+        'gate'                 => env('AI_COMMERCE_GATE', 'view-store-assistant'),
+        'product_search_limit' => (int) env('AI_COMMERCE_PRODUCT_LIMIT', 4),
+    ],
+
     'logging' => [
         'enabled' => (bool) env('AI_LOG_ENABLED', false),
         'channel' => env('AI_LOG_CHANNEL', 'stack'),

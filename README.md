@@ -29,6 +29,7 @@
   <a href="#-security--trust">Security</a> •
   <a href="#%EF%B8%8F-provider-settings-ui--auth-guard">Settings UI</a> •
   <a href="#-chat-ux--personalization">UX &amp; Widget</a> •
+  <a href="#-commerce-assistants">Commerce</a> •
   <a href="#-providers">Providers</a> •
   <a href="#-api-reference">API Reference</a> •
   <a href="#%EF%B8%8F-configuration">Configuration</a> •
@@ -521,6 +522,101 @@ AI_CHAT_WEBHOOK_SECRET=optional-hmac-secret
 
 Fires a best-effort POST after every AI response with `session_id`, `user_message`, `ai_response`, `provider`, `timestamp` — and an `X-LaravelAI-Signature: sha256=...` header when a secret is set. Compatible with Zapier, Make, n8n, or any HTTP endpoint.
 
+## 🛍️ Commerce Assistants
+
+Three AI endpoints for a storefront — **Ask Your Store** (admin analytics), **product Q&A/finder**, and **order status** — built entirely on three PHP interfaces. This package creates **zero e-commerce tables** and assumes **no particular catalog/order shape**: it can't collide with WooCommerce, a custom Eloquent catalog, a remote API, or any other package, because it never queries your commerce data directly. You bind a small resolver class that does, in your own app.
+
+Every endpoint is a clear `501 Not Implemented` until you bind its resolver — nothing "half-works" against a guessed schema.
+
+### How it works, in three steps
+
+**1. Implement one interface** for whichever assistant you want (each is independent — use one, two, or all three):
+
+```php
+// app/Services/MyProductResolver.php
+use EasyAI\LaravelAI\Commerce\Contracts\ProductResolver;
+
+class MyProductResolver implements ProductResolver
+{
+    public function search(array $criteria): array
+    {
+        // $criteria: ['keyword' => 'red dress', 'min_price' => 20, 'max_price' => 50, 'limit' => 4]
+        return Product::query()
+            ->when($criteria['keyword'] ?? null, fn ($q, $kw) => $q->where('name', 'like', "%{$kw}%"))
+            ->when($criteria['max_price'] ?? null, fn ($q, $p) => $q->where('price', '<=', $p))
+            ->limit($criteria['limit'] ?? 4)
+            ->get()
+            ->map(fn ($p) => ['id' => $p->id, 'name' => $p->name, 'price' => $p->price, 'currency' => 'USD'])
+            ->all();
+    }
+
+    public function find(int|string $productId): ?array
+    {
+        $p = Product::find($productId);
+        return $p ? ['id' => $p->id, 'name' => $p->name, 'price' => $p->price] : null;
+    }
+}
+```
+
+**2. Bind it** in your `AppServiceProvider`:
+
+```php
+public function register(): void
+{
+    $this->app->bind(
+        \EasyAI\LaravelAI\Commerce\Contracts\ProductResolver::class,
+        \App\Services\MyProductResolver::class
+    );
+}
+```
+
+**3. Call the endpoint** from your storefront's chat widget or your own frontend:
+
+```bash
+curl -X POST /ai-chat/api/commerce/products/ask \
+  -H "Content-Type: application/json" \
+  -d '{"question": "red dress under $50"}'
+# → {"reply": "Here are a few options!", "products": [{"id": 1, "name": "Red Summer Dress", "price": 42.0}]}
+```
+
+### The three assistants
+
+| Assistant | Endpoint | Contract to implement | Notes |
+|---|---|---|---|
+| 🛒 Product Q&A / finder | `POST /ai-chat/api/commerce/products/ask` | `ProductResolver` | Public by default — it's just product search |
+| 📦 Order status | `POST /ai-chat/api/commerce/orders/ask` | `OrderResolver` | Guest path requires an order number **and** matching email — the resolver, not the package, verifies real ownership |
+| 📊 Ask Your Store | `POST /ai-chat/api/commerce/store-assistant` | `StoreAnalyticsResolver` | **Fail-closed** — refused for everyone until you `Gate::define('view-store-assistant', ...)`, same pattern as the Settings UI |
+
+**Order status example** — the guest verification path:
+
+```bash
+curl -X POST /ai-chat/api/commerce/orders/ask \
+  -d '{"question": "Where is my order?", "order_number": "1001", "email": "jane@example.com"}'
+# → {"reply": "Order #1001 has shipped! It contains 1x Red Dress."}
+# A wrong email never reveals whether the order even exists:
+# → {"reply": "I couldn't find an order matching those details."}
+```
+
+**Ask Your Store example** — once you've defined the Gate:
+
+```php
+// app/Providers/AppServiceProvider.php
+Gate::define('view-store-assistant', fn ($user) => $user->isAdmin());
+```
+
+```bash
+curl -X POST /ai-chat/api/commerce/store-assistant \
+  -d '{"question": "How much revenue this month, and what is running low on stock?"}'
+# → {"answer": "Revenue this period was $12,340 across 210 orders. 3 items are low on stock: ..."}
+```
+
+```env
+# .env — optional overrides
+AI_COMMERCE_PROVIDER=       # blank = use AI_PROVIDER
+AI_COMMERCE_GATE=view-store-assistant
+AI_COMMERCE_PRODUCT_LIMIT=4
+```
+
 ## 🤖 Providers
 
 ### Ollama — Self-Hosted & Free
@@ -979,10 +1075,15 @@ Either way, the sidebar's identity line and the Settings page's Gate (`manage-ai
 | v2.1 | Multi-format export — PDF, Word, Excel, PowerPoint | ✅ Released |
 | v2.1 | Settings encryption at rest for provider API keys | ✅ Released |
 | v2.1.1 | Fix — assistant replies no longer lost on long-running streams | ✅ Released |
-| v2.1 | Function / Tool calling | 🔜 Planned |
-| v2.1 | Groq driver | 🔜 Planned |
-| v2.2 | Response caching | 🔜 Planned |
-| v2.2 | Commerce bot kit (order/product Q&A against a host e-commerce schema) | 🔜 Planned |
+| v2.1.2 | Fix — reapplied guest-cookie persistence fix + broken sidebar link | ✅ Released |
+| v2.2 | Pluggable identity resolution (`identity_resolver`) for token-auth SPAs | ✅ Released |
+| v2.2 | Fix — Projects had no ownership scoping at all | ✅ Released |
+| v2.3 | RAG search scans in bounded batches instead of loading the entire corpus | ✅ Released |
+| v2.4 | Commerce assistants — schema-agnostic Product Q&A, Order Status, Ask Your Store | ✅ Released |
+| v2.5 | Function / Tool calling | 🔜 Planned |
+| v2.5 | Groq driver | 🔜 Planned |
+| v2.6 | Response caching | 🔜 Planned |
+| v2.6 | Pluggable vector-store backend (pgvector, etc.) for large RAG corpora | 🔜 Planned |
 
 ---
 

@@ -7,6 +7,14 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Project extends Model
 {
+    // Explicit — Eloquent's default convention would otherwise use the
+    // bare "projects" table, which collides with almost any host app's
+    // own "projects" concept. Renamed via a dedicated migration (not
+    // edited in place) since this table already shipped in v1.4.0 —
+    // existing installs need their data renamed, not just newly created
+    // under a different name.
+    protected $table = 'ai_projects';
+
     protected $fillable = ['name', 'description', 'user_id', 'guest_token'];
 
     public function files(): HasMany

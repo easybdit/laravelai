@@ -57,7 +57,7 @@ class ProjectOwnershipTest extends TestCase
             ->deleteJson("/ai-chat/api/projects/{$project->id}");
 
         $response->assertStatus(403);
-        $this->assertDatabaseHas('projects', ['id' => $project->id]);
+        $this->assertDatabaseHas('ai_projects', ['id' => $project->id]);
     }
 
     public function test_a_guest_can_delete_their_own_project(): void
@@ -68,7 +68,7 @@ class ProjectOwnershipTest extends TestCase
             ->deleteJson("/ai-chat/api/projects/{$project->id}");
 
         $response->assertOk();
-        $this->assertDatabaseMissing('projects', ['id' => $project->id]);
+        $this->assertDatabaseMissing('ai_projects', ['id' => $project->id]);
     }
 
     public function test_project_files_are_scoped_the_same_way(): void
@@ -95,7 +95,7 @@ class ProjectOwnershipTest extends TestCase
             ->deleteJson("/ai-chat/api/projects/{$theirs->id}/files/{$file->id}");
 
         $response->assertStatus(403);
-        $this->assertDatabaseHas('project_files', ['id' => $file->id]);
+        $this->assertDatabaseHas('ai_project_files', ['id' => $file->id]);
     }
 
     public function test_index_respects_the_configured_sidebar_limit(): void
