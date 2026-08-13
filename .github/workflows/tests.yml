@@ -7,18 +7,32 @@ on:
     branches: [main]
 
 jobs:
+  # Laravel 11.x (PHP 8.2/8.3 + testbench 9.*) is temporarily dropped from
+  # this matrix, not because of anything in this package: as of this
+  # writing, every laravel/framework 11.x release ever published — up
+  # through the latest, v11.55.1 — is flagged by one or more security
+  # advisories that were only ever fixed starting at 12.60.0/13.10.0, never
+  # backported to the 11.x line. Composer's advisory-aware dependency
+  # resolution refuses to select ANY of them, so `composer require
+  # orchestra/testbench:9.*` (which needs laravel/framework ^11.0) is
+  # structurally unsatisfiable right now — confirmed via this exact CI job's
+  # own "Install dependencies" step, and not something a composer.json
+  # change on this package's side can route around (tried the
+  # policy.advisories.block config Composer's own error message points at;
+  # it isn't recognized by the Composer version this repo's CI actually
+  # runs, and there's no local way to verify the exact schema for whatever
+  # version that is). composer.json's own illuminate/support constraint
+  # still declares Laravel 11 support — real installs are unaffected, since
+  # they use whatever laravel/framework their own app already has, never a
+  # fresh testbench-driven install. Re-add this leg once either Laravel
+  # patches the 11.x line or the correct Composer-side policy override for
+  # whatever version GitHub's runner ships becomes clear.
   test:
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
       matrix:
         include:
-          - php: '8.2'
-            laravel: '11.*'
-            testbench: '9.*'
-          - php: '8.3'
-            laravel: '11.*'
-            testbench: '9.*'
           - php: '8.3'
             laravel: '12.*'
             testbench: '10.*'
@@ -46,20 +60,30 @@ jobs:
       # output stuck inside the step's raw log, which GitHub does not expose
       # to unauthenticated viewers (confirmed while diagnosing a real CI
       # failure in this exact job — the log page shows "Sign in to view
-      # logs" even on this public repo). Surfacing the tail of the output as
-      # ::error:: workflow commands turns it into a check-run annotation
-      # instead, which the public REST API does return without auth
-      # (.../check-runs/{job_id}/annotations) — the only way anyone without
-      # write access to this repo can actually read why a run failed.
+      # logs" even on this public repo). Surfacing lines as ::error::
+      # workflow commands turns them into check-run annotations instead,
+      # which the public REST API *does* return without auth
+      # (.../check-runs/{job_id}/annotations).
+      #
+      # GitHub caps annotations at ~10 per step, discovered the hard way: a
+      # naive `tail -n 60 | ::error::` on a real failure here burned the
+      # entire budget on deep Laravel middleware-pipeline stack frames,
+      # cutting off before it ever reached the actual "N) Test::method" /
+      # exception-message header — the one part that says what actually
+      # went wrong. Grep specifically for PHPUnit's numbered failure/error
+      # headers (plus the 2 lines after each, where the exception class and
+      # message live) instead of blindly tailing, so the limited annotation
+      # budget goes to the signal, not 40 lines of framework stack trace.
       - name: Run tests
         run: |
           set +e
           vendor/bin/phpunit 2>&1 | tee /tmp/phpunit-output.txt
           EXIT_CODE=${PIPESTATUS[0]}
           if [ $EXIT_CODE -ne 0 ]; then
-            tail -n 60 /tmp/phpunit-output.txt | while IFS= read -r line; do
+            grep -A2 -E '^[0-9]+\) ' /tmp/phpunit-output.txt | head -n 40 | while IFS= read -r line; do
               echo "::error::${line}"
             done
+            echo "::error::$(tail -n 5 /tmp/phpunit-output.txt | tr '\n' ' ')"
           fi
           exit $EXIT_CODE
 
@@ -147,17 +171,22 @@ jobs:
               ? sprintf("pgsql:host=%s;port=%s;dbname=%s", getenv("DB_HOST"), getenv("DB_PORT"), getenv("DB_DATABASE"))
               : sprintf("mysql:host=%s;port=%s;dbname=%s", getenv("DB_HOST"), getenv("DB_PORT"), getenv("DB_DATABASE"));
             $deadline = time() + 30;
+            $lastError = "(no attempt made)";
             while (time() < $deadline) {
               try {
                 new PDO($dsn, getenv("DB_USERNAME"), getenv("DB_PASSWORD"));
                 echo "Connected to {$driver}\n";
                 exit(0);
               } catch (\PDOException $e) {
-                echo "Waiting for {$driver}... ({$e->getMessage()})\n";
+                $lastError = $e->getMessage();
+                echo "Waiting for {$driver}... ({$lastError})\n";
                 sleep(2);
               }
             }
-            fwrite(STDERR, "Gave up waiting for {$driver} after 30s\n");
+            // ::error:: makes this readable via the check-runs annotations
+            // API without needing log auth — a plain STDERR write here sits
+            // in the same unreadable-without-auth raw log as everything else.
+            echo "::error::Gave up waiting for {$driver} on {$dsn} after 30s. Last error: {$lastError}\n";
             exit(1);
           '
 
@@ -165,19 +194,29 @@ jobs:
       # output stuck inside the step's raw log, which GitHub does not expose
       # to unauthenticated viewers (confirmed while diagnosing a real CI
       # failure in this exact job — the log page shows "Sign in to view
-      # logs" even on this public repo). Surfacing the tail of the output as
-      # ::error:: workflow commands turns it into a check-run annotation
-      # instead, which the public REST API does return without auth
-      # (.../check-runs/{job_id}/annotations) — the only way anyone without
-      # write access to this repo can actually read why a run failed.
+      # logs" even on this public repo). Surfacing lines as ::error::
+      # workflow commands turns them into check-run annotations instead,
+      # which the public REST API *does* return without auth
+      # (.../check-runs/{job_id}/annotations).
+      #
+      # GitHub caps annotations at ~10 per step, discovered the hard way: a
+      # naive `tail -n 60 | ::error::` on a real failure here burned the
+      # entire budget on deep Laravel middleware-pipeline stack frames,
+      # cutting off before it ever reached the actual "N) Test::method" /
+      # exception-message header — the one part that says what actually
+      # went wrong. Grep specifically for PHPUnit's numbered failure/error
+      # headers (plus the 2 lines after each, where the exception class and
+      # message live) instead of blindly tailing, so the limited annotation
+      # budget goes to the signal, not 40 lines of framework stack trace.
       - name: Run tests
         run: |
           set +e
           vendor/bin/phpunit 2>&1 | tee /tmp/phpunit-output.txt
           EXIT_CODE=${PIPESTATUS[0]}
           if [ $EXIT_CODE -ne 0 ]; then
-            tail -n 60 /tmp/phpunit-output.txt | while IFS= read -r line; do
+            grep -A2 -E '^[0-9]+\) ' /tmp/phpunit-output.txt | head -n 40 | while IFS= read -r line; do
               echo "::error::${line}"
             done
+            echo "::error::$(tail -n 5 /tmp/phpunit-output.txt | tr '\n' ' ')"
           fi
           exit $EXIT_CODE
