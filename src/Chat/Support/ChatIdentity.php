@@ -34,7 +34,12 @@ class ChatIdentity
 
         $token = $request->cookie(self::COOKIE_NAME);
 
-        if (!is_string($token) || !preg_match('/^[a-f0-9]{40}$/', $token)) {
+        // Must match ensureGuestToken()'s actual output alphabet — Str::random()
+        // produces base64 with '/', '+', '=' stripped, i.e. mixed-case
+        // alphanumeric, NOT lowercase hex. A mismatch here silently rejects
+        // every returning guest's cookie and re-mints a new identity on every
+        // single request, which is as bad as having no persistence at all.
+        if (!is_string($token) || !preg_match('/^[A-Za-z0-9]{40}$/', $token)) {
             $token = null;
         }
 
