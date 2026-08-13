@@ -1,5 +1,19 @@
 # Changelog
 
+## v2.1.1 — 2026-08-13
+
+### 🐛 Fixed: assistant replies silently lost on long-running streams
+
+Found live: a reasoning model's reply (thinking + a long answer) can run past whatever `max_execution_time` the host's `php.ini` enforces. That fires as an **uncatchable** PHP fatal at whatever line happens to be executing — which is always somewhere inside the AI call, never in the save step that comes after it. The user watches the full reply stream to their screen, then the process dies silently: nothing gets written to the database, and the reply is gone forever on the next page reload. Confirmed against a real deployment — a request died with `Maximum execution time of 300 seconds exceeded` exactly 300 seconds after the user's message, and the assistant's already-fully-rendered reply was never in the `chat_messages` table.
+
+- `/ai-chat/api/stream` and the `/image` generation stream now call `set_time_limit(0)` before starting — this is a long-lived SSE response by design, not a normal request, and shouldn't be capped by a general-purpose php.ini setting at all.
+- Added a `register_shutdown_function` safety net that persists whatever content was generated if the script still dies unexpectedly for any *other* reason (memory limit, a proxy/web-server timeout PHP never even sees, etc.) — this closes the whole class of bug, not just the one specific trigger that was found.
+- The assistant-message save is now itself wrapped in a try/catch, so a transient DB error there can no longer become an uncaught exception that kills the response mid-stream.
+
+New regression test covers the catchable half of this (a DB-level failure on the save); the uncatchable PHP-fatal half was confirmed by reproducing it against a live server and re-running the same request after the fix.
+
+---
+
 ## v2.1.0 — 2026-08-13
 
 ### 📤 Multi-format conversation export (PDF, Word, Excel, PowerPoint)

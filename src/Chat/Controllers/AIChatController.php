@@ -16,6 +16,7 @@ use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
 
 class AIChatController extends Controller
@@ -319,6 +320,13 @@ class AIChatController extends Controller
     private function streamImageGeneration(ChatSession $session, string $prompt, bool $disableStorage, bool $isFirstMessage)
     {
         return response()->stream(function () use ($session, $prompt, $disableStorage, $isFirstMessage) {
+            // See the same guard in stream() — image generation is also a
+            // single potentially-slow external call, and the save below it
+            // shouldn't be at the mercy of php.ini's max_execution_time.
+            if (function_exists('set_time_limit')) {
+                @set_time_limit(0);
+            }
+
             // Some shared hosts (and Apache's mod_deflate) wrap the response
             // in their own output buffer that silently defeats streaming
             // unless it's closed first. Skipped under the test runner —
@@ -562,7 +570,54 @@ class AIChatController extends Controller
             $session, $history, $provider, $chatModel, $systemPrompt,
             $disableStorage, $newTitle, $message, $request
         ) {
+            // A reasoning model's reply (thinking + a long answer) can
+            // legitimately run past whatever max_execution_time the host's
+            // php.ini enforces — that fires as an *uncatchable* fatal error
+            // at whatever line happens to be executing, which is always
+            // somewhere inside the AI call, never in the save step below
+            // it. The result: the browser finishes rendering the full reply
+            // (already streamed chunk by chunk) while the DB silently never
+            // gets it, because the code that saves it never gets to run.
+            // Found live: a 300s php.ini cap killed the request exactly
+            // 300s after the user's message, losing an otherwise-complete
+            // reply. This is a long-lived SSE stream, not a normal request
+            // — it should not be subject to that limit at all.
+            if (function_exists('set_time_limit')) {
+                @set_time_limit(0);
+            }
+
             $fullReply = '';
+            $saved     = false;
+            $sessionId = $session->id;
+
+            // Safety net for every *other* way this script can die mid-
+            // stream without warning — memory_limit, a proxy/web-server
+            // timeout PHP itself never sees, a fatal in a driver, etc. If
+            // the browser already received content but the normal save
+            // path below never ran, persist whatever was generated rather
+            // than losing it silently. Captures a plain session id, not
+            // the Eloquent model, and never lets a logging failure escape
+            // — this can run at the very tail of the request lifecycle,
+            // where making assumptions about what's still available is
+            // exactly the kind of thing that got us here in the first place.
+            register_shutdown_function(function () use (&$fullReply, &$saved, $sessionId, $disableStorage) {
+                if ($saved || $fullReply === '' || $disableStorage) {
+                    return;
+                }
+                try {
+                    ChatMessage::create([
+                        'chat_session_id' => $sessionId,
+                        'role'            => 'assistant',
+                        'content'         => $fullReply,
+                    ]);
+                } catch (\Throwable $e) {
+                    try {
+                        Log::error('laraveleasyai: shutdown-safety-net save failed', ['session_id' => $sessionId, 'error' => $e->getMessage()]);
+                    } catch (\Throwable) {
+                        // Nothing more we can do at this point in the lifecycle.
+                    }
+                }
+            });
 
             // Some shared hosts (and Apache's mod_deflate) wrap the response
             // in their own output buffer that silently defeats streaming
@@ -604,16 +659,25 @@ class AIChatController extends Controller
             }
 
             if ($fullReply && !$disableStorage) {
-                $assistantMsg = ChatMessage::create([
-                    'chat_session_id' => $session->id,
-                    'role'            => 'assistant',
-                    'content'         => $fullReply,
-                ]);
-                echo "data: " . json_encode(['assistant_id' => $assistantMsg->id]) . "\n\n";
-                if (ob_get_level() > 0) { ob_flush(); }
-                flush();
+                try {
+                    $assistantMsg = ChatMessage::create([
+                        'chat_session_id' => $session->id,
+                        'role'            => 'assistant',
+                        'content'         => $fullReply,
+                    ]);
+                    $saved = true;
+                    echo "data: " . json_encode(['assistant_id' => $assistantMsg->id]) . "\n\n";
+                    if (ob_get_level() > 0) { ob_flush(); }
+                    flush();
 
-                $this->fireWebhook($session, $message, $fullReply, $provider);
+                    $this->fireWebhook($session, $message, $fullReply, $provider);
+                } catch (\Throwable $e) {
+                    // Let the shutdown-function safety net above have a shot
+                    // at it too ($saved is still false) — this just stops a
+                    // DB-level failure here (e.g. a transient connection
+                    // drop) from being a raw uncaught exception.
+                    Log::error('laraveleasyai: failed to save assistant reply', ['session_id' => $session->id, 'error' => $e->getMessage()]);
+                }
             }
 
             if ($newTitle) {

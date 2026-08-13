@@ -78,6 +78,49 @@ class ChatFlowTest extends TestCase
         $this->assertDatabaseHas('chat_messages', ['chat_session_id' => $session->id, 'role' => 'assistant']);
     }
 
+    public function test_stream_completes_cleanly_if_saving_the_assistant_reply_throws(): void
+    {
+        // Found live: a reasoning model's reply can outrun php.ini's
+        // max_execution_time, which kills the request with an *uncatchable*
+        // fatal at whatever line is executing — always somewhere before the
+        // save, never after — so the browser finishes rendering a complete
+        // reply while the DB silently never receives it. PHPUnit can't
+        // simulate that specific fatal, but it can simulate the *catchable*
+        // half of the same failure class (a DB-level error on the insert)
+        // and confirm the stream still finishes instead of dying mid-response.
+        Http::fake([
+            '127.0.0.1:11434/api/chat' => Http::sequence()
+                ->push(['message' => ['role' => 'assistant', 'content' => 'A Short Title'], 'done' => true])
+                ->push(['message' => ['role' => 'assistant', 'content' => 'Hello there!'], 'model' => 'llama3.1:8b', 'done' => true]),
+        ]);
+
+        $session = ChatSession::create(['title' => 'New Chat']);
+
+        ChatMessage::creating(function (ChatMessage $model) {
+            if ($model->role === 'assistant') {
+                throw new \RuntimeException('simulated DB failure while saving the assistant reply');
+            }
+        });
+
+        try {
+            $response = $this->call('POST', '/ai-chat/api/stream', [
+                'message'    => 'Hi there',
+                'session_id' => $session->id,
+            ], [], [], ['HTTP_ACCEPT' => 'text/event-stream']);
+
+            $response->assertOk();
+            $content = $response->streamedContent();
+
+            // The reply still streamed fully to the browser...
+            $this->assertStringContainsString('Hello there!', $content);
+            // ...and the response still finished cleanly rather than dying
+            // mid-stream with no [DONE] and no explanation.
+            $this->assertStringContainsString('[DONE]', $content);
+        } finally {
+            ChatMessage::flushEventListeners();
+        }
+    }
+
     public function test_stream_blocks_message_over_configured_length(): void
     {
         // 50 is a hard floor enforced by ChatGuard regardless of config —
