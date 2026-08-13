@@ -112,5 +112,36 @@ jobs:
           composer require "illuminate/support:12.*" "illuminate/http:12.*" "orchestra/testbench:10.*" --no-update
           composer install --no-interaction --prefer-dist
 
+      # The service's own --health-cmd only proves the DB *server process*
+      # answers pings — not that the target database
+      # (MYSQL_DATABASE/POSTGRES_DB) has actually finished being created,
+      # which happens on the container's first-boot init script shortly
+      # *after* the server starts accepting connections. A test suite that
+      # starts the instant the health check goes green can race that init
+      # step. Retries an actual PDO connection to the real target database
+      # (not just a ping) for up to 30s before handing off to phpunit, so a
+      # genuine app-code failure is never masked as a flaky-looking one.
+      - name: Wait for database to accept real connections
+        run: |
+          php -r '
+            $driver = getenv("DB_CONNECTION");
+            $dsn = $driver === "pgsql"
+              ? sprintf("pgsql:host=%s;port=%s;dbname=%s", getenv("DB_HOST"), getenv("DB_PORT"), getenv("DB_DATABASE"))
+              : sprintf("mysql:host=%s;port=%s;dbname=%s", getenv("DB_HOST"), getenv("DB_PORT"), getenv("DB_DATABASE"));
+            $deadline = time() + 30;
+            while (time() < $deadline) {
+              try {
+                new PDO($dsn, getenv("DB_USERNAME"), getenv("DB_PASSWORD"));
+                echo "Connected to {$driver}\n";
+                exit(0);
+              } catch (\PDOException $e) {
+                echo "Waiting for {$driver}... ({$e->getMessage()})\n";
+                sleep(2);
+              }
+            }
+            fwrite(STDERR, "Gave up waiting for {$driver} after 30s\n");
+            exit(1);
+          '
+
       - name: Run tests
         run: vendor/bin/phpunit

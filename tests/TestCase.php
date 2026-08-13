@@ -80,8 +80,7 @@ abstract class TestCase extends BaseTestCase
             return;
         }
 
-        $app['config']->set('database.default', $driver);
-        $app['config']->set("database.connections.{$driver}", [
+        $config = [
             'driver'   => $driver,
             'host'     => env('DB_HOST', '127.0.0.1'),
             'port'     => env('DB_PORT', $driver === 'pgsql' ? 5432 : 3306),
@@ -90,6 +89,18 @@ abstract class TestCase extends BaseTestCase
             'password' => env('DB_PASSWORD', ''),
             'charset'  => $driver === 'pgsql' ? 'utf8' : 'utf8mb4',
             'prefix'   => '',
-        ]);
+        ];
+
+        // mysql's grammar reads collation off the connection config — an
+        // absent key isn't fatal (Laravel/MySQL both fall back to a
+        // server default), but leaving it unset is exactly the kind of gap
+        // that behaves fine on one server's default settings and not
+        // another's, which is the whole reason this matrix exists.
+        if ($driver === 'mysql') {
+            $config['collation'] = 'utf8mb4_unicode_ci';
+        }
+
+        $app['config']->set('database.default', $driver);
+        $app['config']->set("database.connections.{$driver}", $config);
     }
 }
