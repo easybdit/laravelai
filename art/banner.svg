@@ -1,6 +1,6 @@
 <svg width="100%" viewBox="0 0 1200 374" role="img" xmlns="http://www.w3.org/2000/svg">
-  <title>LaravelEasyAI Banner</title>
-  <desc>LaravelEasyAI package banner — One interface, any AI</desc>
+  <title>LaravelAI Banner</title>
+  <desc>LaravelAI package banner — One interface, any AI</desc>
 
   <defs>
     <linearGradient id="iconGrad" x1="0%" y1="0%" x2="100%" y2="100%">
@@ -19,9 +19,9 @@
   <rect x="556" y="36" width="88" height="88" rx="20" fill="url(#iconGrad)"/>
   <text x="600" y="97" font-family="system-ui, sans-serif" font-size="38" font-weight="700" fill="white" text-anchor="middle">AI</text>
 
-  <!-- Title: Laravel in white, EasyAI in gradient -->
+  <!-- Title: Laravel in white, AI in gradient -->
   <text font-family="system-ui, sans-serif" font-size="58" font-weight="700" text-anchor="middle" y="190">
-    <tspan x="600" fill="white">Laravel</tspan><tspan fill="url(#aiTextGrad)">EasyAI</tspan>
+    <tspan x="600" fill="white">Laravel</tspan><tspan fill="url(#aiTextGrad)">AI</tspan>
   </text>
 
   <!-- Divider -->

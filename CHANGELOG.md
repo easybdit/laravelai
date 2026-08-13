@@ -1,5 +1,14 @@
 # Changelog
 
+## Unreleased (docs)
+
+- Fixed the banner graphic (`art/banner.svg`) still reading "LaravelEasyAI" — the brand became "LaravelAI" everywhere else (page title, badges, nav) a while ago; the SVG's own wordmark just hadn't been updated to match.
+- Split repo/package references correctly after the GitHub repo moved (`easybdit/laraveleasyai` → `easybdit/laravelai`) without the Packagist package following: GitHub-hosted links (banner image, Actions badge, Issues link) now point at the new repo; Packagist badges, the `composer require` line, and `composer.json`'s own `"name"` stay on `easybdit/laraveleasyai` — that's genuinely where the published, actively-installed package (v2.1.1, real install history) still lives. Packagist has no in-place rename; abandoning that listing wasn't the right call here.
+- Added a **[বাংলা গাইড (Bangla Guide)](https://github.com/easybdit/laravelai#-বাংলা-গাইড-bangla-guide)** section — a short, real quick-start translated to Bangla (install steps, `.env`, a code example) for readers more comfortable in Bangla than English, plus a one-click Google Translate link for the whole page into any language.
+- Added a pointer to the **[EasyIT AI Chat WordPress plugin](https://wordpress.org/plugins/easyit-ai-chat/)** — the same chat system, for readers on WordPress instead of Laravel.
+
+---
+
 ## v2.1.1 — 2026-08-13
 
 ### 🐛 Fixed: assistant replies silently lost on long-running streams
