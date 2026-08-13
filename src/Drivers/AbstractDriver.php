@@ -7,6 +7,7 @@ use EasyAI\LaravelAI\Contracts\AIProviderInterface;
 use EasyAI\LaravelAI\Contracts\AIResponseInterface;
 use EasyAI\LaravelAI\Exceptions\ConnectionException;
 use EasyAI\LaravelAI\Support\TokenEstimator;
+use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
@@ -93,6 +94,81 @@ abstract class AbstractDriver implements AIProviderInterface
         return $this;
     }
 
+    /**
+     * Shared entry point for every driver's chat() — the actual wire call
+     * still lives in each driver's doChat() (same shape as
+     * appendToolExchange(): the provider-specific work stays in the
+     * subclass, the cross-cutting behavior lives here once).
+     *
+     * Wraps doChat() with an opt-in response cache
+     * (config('ai.cache.enabled'), off by default — when off, or when
+     * this call is streaming or tool-calling, this is a pure passthrough
+     * to doChat() with no extra behavior). See shouldCache() for the exact
+     * conditions.
+     */
+    public function chat(array $messages): AIResponseInterface
+    {
+        if (!$this->shouldCache()) {
+            return $this->doChat($messages);
+        }
+
+        $key   = $this->cacheKey($messages);
+        $store = Cache::store(config('ai.cache.store'));
+
+        $cached = $store->get($key);
+        if ($cached instanceof AIResponseInterface) {
+            return $cached;
+        }
+
+        $response = $this->doChat($messages);
+        $store->put($key, $response, (int) config('ai.cache.ttl', 3600));
+
+        return $response;
+    }
+
+    /**
+     * Caching only ever applies to a plain, non-streaming, non-tool-calling
+     * chat() call — a cached response for a streamed request defeats the
+     * point of streaming, and a cached response for a tool-calling request
+     * would skip re-running whatever side effects the tool call implies.
+     * Read here (before doChat() runs and resetOverrides() clears them),
+     * not inside doChat() itself.
+     */
+    protected function shouldCache(): bool
+    {
+        return (bool) config('ai.cache.enabled', false)
+            && $this->streamCallback === null
+            && empty($this->currentTools);
+    }
+
+    /**
+     * Cache key covers everything that affects the actual request: provider,
+     * model, message content, temperature, max tokens, and system prompt.
+     * Deliberately excludes ai.cache.* config itself (ttl/store don't affect
+     * the request) and per-call knobs that don't apply to the plain chat()
+     * path this covers (format/keepAlive/think/options).
+     */
+    protected function cacheKey(array $messages): string
+    {
+        return 'laraveleasyai:cache:' . md5(json_encode([
+            'provider'      => $this->getProviderName(),
+            'model'         => $this->currentModel,
+            'messages'      => $messages,
+            'temperature'   => $this->getTemperature(),
+            'max_tokens'    => $this->getMaxTokens(),
+            'system_prompt' => $this->currentSystemPrompt,
+        ]));
+    }
+
+    /**
+     * The actual provider-specific wire call — what used to be each
+     * driver's own public chat() before response caching (v2.7.0) needed a
+     * single shared place to intercept every chat() call. Still exactly
+     * one implementation per driver (or inherited, e.g. DeepSeek/Together/
+     * Groq/Custom all reuse OpenAIDriver's), same as before.
+     */
+    abstract protected function doChat(array $messages): AIResponseInterface;
+
     public function stream(array $messages, callable $callback): AIResponseInterface
     {
         $this->streamCallback = $callback;
@@ -111,8 +187,18 @@ abstract class AbstractDriver implements AIProviderInterface
      * genuinely different per provider (OpenAI's tool_calls + role:"tool"
      * messages, Anthropic's tool_use/tool_result content blocks, Gemini's
      * functionCall/functionResponse parts, Ollama's native tool_calls).
+     *
+     * $onToolCall (optional, added v2.7.0) is called as
+     * $onToolCall($call, $result) right after each tool executes — lets a
+     * caller observe the agent loop's intermediate steps (e.g. the chat
+     * UI echoing an SSE "a tool was just called" status event) without
+     * changing run()'s own return value or control flow. Never called for
+     * an unknown-tool-name step's error result any differently than a
+     * normal one — the caller gets the same ['error' => ...] shape execute()
+     * would otherwise catch. Purely additive: omitted (null, the default),
+     * this is a no-op and run() behaves exactly as before.
      */
-    public function run(array $messages, int $maxSteps = 5): AIResponseInterface
+    public function run(array $messages, int $maxSteps = 5, ?callable $onToolCall = null): AIResponseInterface
     {
         $tools    = $this->currentTools;
         $maxSteps = max(1, $maxSteps);
@@ -128,13 +214,16 @@ abstract class AbstractDriver implements AIProviderInterface
 
             $results = [];
             foreach ($response->getToolCalls() as $call) {
-                $tool = $this->findTool($tools, $call->name);
-                $results[] = [
-                    'call'   => $call,
-                    'result' => $tool
-                        ? $tool->execute($call->arguments)
-                        : ['error' => "Unknown tool requested: {$call->name}"],
-                ];
+                $tool   = $this->findTool($tools, $call->name);
+                $result = $tool
+                    ? $tool->execute($call->arguments)
+                    : ['error' => "Unknown tool requested: {$call->name}"];
+
+                $results[] = ['call' => $call, 'result' => $result];
+
+                if ($onToolCall !== null) {
+                    $onToolCall($call, $result);
+                }
             }
 
             $messages = $this->appendToolExchange($messages, $response, $results);

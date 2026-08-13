@@ -17,7 +17,7 @@ class OllamaDriver extends AbstractDriver
         return 'ollama';
     }
 
-    public function chat(array $messages): AIResponseInterface
+    protected function doChat(array $messages): AIResponseInterface
     {
         $messages = $this->prependSystemPrompt($messages);
         $url      = rtrim($this->config['url'], '/') . '/api/chat';

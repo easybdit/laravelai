@@ -110,7 +110,7 @@ class GeminiDriver extends AbstractDriver
         return $body;
     }
 
-    public function chat(array $messages): AIResponseInterface
+    protected function doChat(array $messages): AIResponseInterface
     {
         $messages  = $this->prependSystemPrompt($messages);
         $formatted = $this->toGeminiContents($messages);

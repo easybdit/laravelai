@@ -57,6 +57,12 @@ interface AIProviderInterface
      * (or the last response, with whatever it has, if $maxSteps is hit —
      * an agent that can't finish shouldn't loop forever, but it also
      * shouldn't throw away a partial answer).
+     *
+     * $onToolCall, when given, is called as $onToolCall($call, $result)
+     * right after each individual tool call executes — purely an
+     * observability hook (e.g. surfacing "a tool was just called" to a
+     * caller), never changes what run() returns. Omit for the exact same
+     * behavior as before this parameter existed.
      */
-    public function run(array $messages, int $maxSteps = 5): AIResponseInterface;
+    public function run(array $messages, int $maxSteps = 5, ?callable $onToolCall = null): AIResponseInterface;
 }

@@ -2,6 +2,7 @@
 
 namespace EasyAI\LaravelAI\Chat\Controllers;
 
+use EasyAI\LaravelAI\Agent\Tools\WebSearchTool;
 use EasyAI\LaravelAI\Chat\Exceptions\ChatBlockedException;
 use EasyAI\LaravelAI\Chat\Jobs\SendWebhookJob;
 use EasyAI\LaravelAI\Chat\Models\ChatAttachment;
@@ -27,6 +28,7 @@ class AIChatController extends Controller
         'openai'    => ['label' => 'OpenAI (ChatGPT)',   'icon' => '🟢'],
         'anthropic' => ['label' => 'Anthropic (Claude)', 'icon' => '🟠'],
         'deepseek'  => ['label' => 'DeepSeek',           'icon' => '🔵'],
+        'groq'      => ['label' => 'Groq',               'icon' => '⚡'],
         'gemini'    => ['label' => 'Google Gemini',      'icon' => '✦'],
         'together'  => ['label' => 'Together AI',        'icon' => '🟣'],
     ];
@@ -62,6 +64,27 @@ class AIChatController extends Controller
     private function resolveProfile(?string $key): ?array
     {
         return $key ? config("ai.chat.bot_profiles.{$key}") : null;
+    }
+
+    /**
+     * Maps config('ai.chat.enabled_tools') names to ready-to-use Tool
+     * instances for the chat UI's agent-loop path (config('ai.chat.tools_enabled')).
+     * Only built-in tools are wireable here for now — see that config
+     * key's docblock. Unknown names are silently skipped, not fatal — a
+     * typo in config shouldn't break chat.
+     *
+     * @return \EasyAI\LaravelAI\Agent\Tool[]
+     */
+    private function enabledTools(): array
+    {
+        $tools = [];
+        foreach (config('ai.chat.enabled_tools', []) as $name) {
+            $tools[] = match ($name) {
+                'web_search' => WebSearchTool::make(),
+                default      => null,
+            };
+        }
+        return array_values(array_filter($tools));
     }
 
     private function scopeToIdentity($query, ?int $userId, ?string $guestToken)
@@ -687,28 +710,69 @@ class AIChatController extends Controller
                 }
             }
 
+            // Opt-in agent-loop path (config('ai.chat.tools_enabled')) — see
+            // that key's docblock in config/ai.php for the streaming
+            // tradeoff this implies. $tools stays empty (default config),
+            // so every existing install falls straight into the untouched
+            // ->stream() branch below exactly as before this existed.
+            $tools = config('ai.chat.tools_enabled', false) ? $this->enabledTools() : [];
+
             try {
-                AI::provider($provider)
-                    ->model($chatModel)
-                    ->systemPrompt((string) $systemPrompt)
-                    ->timeout(300)
-                    ->stream(
-                        $history,
-                        function (string $chunk, string $type = 'content') use (&$fullReply) {
-                            // "thinking" chunks (reasoning models) are never
-                            // added to the persisted/returned reply — only
-                            // relayed live so the UI can show something is
-                            // happening instead of a silent gap.
-                            if ($type === 'thinking') {
-                                echo "data: " . json_encode(['thinking' => $chunk]) . "\n\n";
-                            } else {
-                                $fullReply .= $chunk;
-                                echo "data: " . json_encode(['text' => $chunk]) . "\n\n";
+                if (!empty($tools)) {
+                    $response = AI::provider($provider)
+                        ->model($chatModel)
+                        ->systemPrompt((string) $systemPrompt)
+                        ->timeout(300)
+                        ->tools($tools)
+                        ->run(
+                            $history,
+                            (int) config('ai.agent.max_steps', 5),
+                            function ($call, $result) {
+                                // Fired right after each tool executes (see
+                                // AbstractDriver::run()'s $onToolCall) — a
+                                // distinct SSE event so the frontend can show
+                                // a live "used a tool" status line. run() is
+                                // non-streaming, so the final answer itself
+                                // still only arrives as one 'text' chunk below,
+                                // not token by token.
+                                echo "data: " . json_encode(['tool_call' => [
+                                    'name'      => $call->name,
+                                    'arguments' => $call->arguments,
+                                ]]) . "\n\n";
+                                if (ob_get_level() > 0) { ob_flush(); }
+                                flush();
                             }
-                            if (ob_get_level() > 0) { ob_flush(); }
-                            flush();
-                        }
-                    );
+                        );
+
+                    $fullReply = $response->getContent();
+                    if ($fullReply !== '') {
+                        echo "data: " . json_encode(['text' => $fullReply]) . "\n\n";
+                        if (ob_get_level() > 0) { ob_flush(); }
+                        flush();
+                    }
+                } else {
+                    AI::provider($provider)
+                        ->model($chatModel)
+                        ->systemPrompt((string) $systemPrompt)
+                        ->timeout(300)
+                        ->stream(
+                            $history,
+                            function (string $chunk, string $type = 'content') use (&$fullReply) {
+                                // "thinking" chunks (reasoning models) are never
+                                // added to the persisted/returned reply — only
+                                // relayed live so the UI can show something is
+                                // happening instead of a silent gap.
+                                if ($type === 'thinking') {
+                                    echo "data: " . json_encode(['thinking' => $chunk]) . "\n\n";
+                                } else {
+                                    $fullReply .= $chunk;
+                                    echo "data: " . json_encode(['text' => $chunk]) . "\n\n";
+                                }
+                                if (ob_get_level() > 0) { ob_flush(); }
+                                flush();
+                            }
+                        );
+                }
             } catch (ConnectionException $e) {
                 echo "data: " . json_encode(['error' => ChatGuard::publicErrorMessage($e, $request)]) . "\n\n";
             } catch (\Exception $e) {

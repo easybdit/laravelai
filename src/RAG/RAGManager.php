@@ -2,6 +2,7 @@
 namespace EasyAI\LaravelAI\RAG;
 
 use EasyAI\LaravelAI\Facades\AI;
+use EasyAI\LaravelAI\RAG\Contracts\VectorStoreInterface;
 use EasyAI\LaravelAI\RAG\Jobs\IngestDocumentJob;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
@@ -16,18 +17,37 @@ class RAGManager
         return $this;
     }
 
+    /**
+     * A host-bound VectorStoreInterface implementation takes over
+     * ingest()/search()/flush()/count() entirely; null (the default, for
+     * every app that never binds one) means "keep using the built-in
+     * DB-table scan" — every method below is unchanged from before this
+     * existed in that case.
+     */
+    private function vectorStore(): ?VectorStoreInterface
+    {
+        return app()->bound(VectorStoreInterface::class) ? app(VectorStoreInterface::class) : null;
+    }
+
     public function ingest(string $content, string $source = ''): int
     {
+        $store = $this->vectorStore();
         $count = 0;
+
         foreach ($this->chunk($content) as $chunk) {
             $vector = $this->embed($chunk);
-            DB::table(config('ai.rag.table'))->insert([
-                'content'    => $chunk,
-                'source'     => $source,
-                'embedding'  => json_encode($vector),
-                'created_at' => now(),
-                'updated_at' => now(),
-            ]);
+
+            if ($store) {
+                $store->upsert($chunk, $source, $vector);
+            } else {
+                DB::table(config('ai.rag.table'))->insert([
+                    'content'    => $chunk,
+                    'source'     => $source,
+                    'embedding'  => json_encode($vector),
+                    'created_at' => now(),
+                    'updated_at' => now(),
+                ]);
+            }
             $count++;
         }
         return $count;
@@ -62,19 +82,21 @@ class RAGManager
     public function search(string $query): array
     {
         $queryVector = $this->embed($query);
+        $source      = $this->sourceFilter;
+        $this->sourceFilter = null;
+
+        if ($store = $this->vectorStore()) {
+            return $store->search($queryVector, $source, (int) config('ai.rag.top_k', 3));
+        }
 
         $dbQuery = DB::table(config('ai.rag.table'))
             ->select(['id', 'content', 'source', 'embedding']);
 
-        if ($this->sourceFilter) {
-            $dbQuery->where('source', $this->sourceFilter);
+        if ($source) {
+            $dbQuery->where('source', $source);
         }
 
-        $results = $this->topKScan($dbQuery, $queryVector, (int) config('ai.rag.top_k', 3));
-
-        $this->sourceFilter = null;
-
-        return $results;
+        return $this->topKScan($dbQuery, $queryVector, (int) config('ai.rag.top_k', 3));
     }
 
     /**
@@ -83,6 +105,11 @@ class RAGManager
      * can be de-indexed precisely on update/delete — this collects all of
      * them back together at query time via a source-prefix match instead
      * of the exact-match source() scoping used by ingest()/search().
+     *
+     * NOT delegated to a bound VectorStoreInterface (see that contract's
+     * docblock "Note on scope") — its search() takes a single exact
+     * source, not the prefix match this needs, so this always queries the
+     * built-in DB table directly regardless of what's bound.
      */
     public function searchAutoIndexed(string $query): array
     {
@@ -154,11 +181,39 @@ class RAGManager
         $target = $source ?? $this->sourceFilter;
         $this->sourceFilter = null;
 
+        if ($store = $this->vectorStore()) {
+            $store->delete($target);
+            return;
+        }
+
         if ($target) {
             DB::table(config('ai.rag.table'))->where('source', $target)->delete();
         } else {
             DB::table(config('ai.rag.table'))->truncate();
         }
+    }
+
+    /**
+     * Total stored chunk count, optionally scoped to one exact source —
+     * mirrors flush()'s targeting (explicit $source, else a prior
+     * ->source() call, else "everything"). New in v2.7.0 alongside
+     * VectorStoreInterface — not a behavior change to any existing method.
+     */
+    public function count(?string $source = null): int
+    {
+        $target = $source ?? $this->sourceFilter;
+        $this->sourceFilter = null;
+
+        if ($store = $this->vectorStore()) {
+            return $store->count($target);
+        }
+
+        $query = DB::table(config('ai.rag.table'));
+        if ($target) {
+            $query->where('source', $target);
+        }
+
+        return $query->count();
     }
 
     private function embed(string $text): array

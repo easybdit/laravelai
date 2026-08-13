@@ -401,6 +401,33 @@ Chat sessions with no project attached automatically pull context from every aut
 | `AI_RAG_TABLE` | `ai_documents` | Database table |
 | `AI_RAG_MAX_SCAN_ROWS` | `50000` | Safety cap on rows scanned per search — raise it if your knowledge base is genuinely bigger and you'd rather wait than get a capped answer |
 
+### Outgrown the built-in scan? Bring your own vector store
+
+The built-in RAG search is genuinely fine up to tens of thousands of chunks (an in-PHP cosine scan, memory-bounded — see `AI_RAG_MAX_SCAN_ROWS` above), but it's not a substitute for a real vector database at large scale. Bind your own `VectorStoreInterface` implementation and `RAGManager` delegates ingestion/search/flush to it entirely — every existing install (nothing bound) keeps the exact same built-in behavior.
+
+```php
+interface VectorStoreInterface
+{
+    public function upsert(string $content, string $source, array $embedding): void;
+    public function search(array $queryEmbedding, ?string $source, int $topK): array;
+    public function delete(?string $source): void;
+    public function count(?string $source): int;
+}
+```
+
+A working Postgres + [pgvector](https://github.com/pgvector/pgvector) implementation ships out of the box — no new Composer dependency, just raw SQL against the extension:
+
+```php
+$this->app->bind(
+    \EasyAI\LaravelAI\RAG\Contracts\VectorStoreInterface::class,
+    \EasyAI\LaravelAI\RAG\VectorStores\PgVectorStore::class
+);
+```
+
+One-time setup (`CREATE EXTENSION vector;` + the table DDL) is documented directly in `PgVectorStore`'s class docblock. Want Pinecone, Weaviate, Milvus, or anything else instead? Implement the same four methods.
+
+> One scope boundary worth knowing: the "Ask This Site" auto-indexer's search (`searchAutoIndexed()`) isn't delegated — its multi-source prefix match doesn't fit this contract's single-source `search()`, so it always uses the built-in table regardless of what's bound.
+
 ---
 
 ## 🔒 Security & Trust
@@ -671,6 +698,15 @@ AI_DEEPSEEK_KEY=sk-your-api-key
 AI_DEEPSEEK_MODEL=deepseek-chat
 ```
 
+### Groq
+
+Famously fast inference, OpenAI-compatible API — same driver family as DeepSeek/Together, gets tool-calling and everything else for free.
+
+```env
+AI_GROQ_KEY=gsk_your-api-key
+AI_GROQ_MODEL=llama-3.3-70b-versatile
+```
+
 ### Google Gemini
 
 ```env
@@ -789,12 +825,23 @@ $this->app->bind(
 
 | Provider | Tool calling | Notes |
 |---|---|---|
-| OpenAI | ✅ | Also covers DeepSeek, Together AI, and any custom OpenAI-compatible endpoint |
+| OpenAI | ✅ | Also covers DeepSeek, Together AI, Groq, and any custom OpenAI-compatible endpoint |
 | Anthropic (Claude) | ✅ | Supports parallel tool calls (multiple in one turn) |
 | Google Gemini | ✅ | |
 | Ollama | ✅ | Model-dependent — needs a tool-calling-capable model (e.g. `qwen3`, `llama3.1`); older/smaller models may ignore the tools list entirely |
 
-**Scope note:** `run()` is non-streaming by design — an agent loop's intermediate tool-call decisions aren't meaningfully "typed out" character by character the way a final answer is, so this uses the same request/response `chat()` path under the hood, not `stream()`. Streaming a tool-calling agent's *final* answer after the loop resolves is on the roadmap.
+**Scope note:** `run()` is non-streaming by design — an agent loop's intermediate tool-call decisions aren't meaningfully "typed out" character by character the way a final answer is, so this uses the same request/response `chat()` path under the hood, not `stream()`. Investigated properly for v2.7.0 and deliberately not built yet: every driver's streaming handler currently only parses text/thinking deltas, never tool-call deltas — doing this right means teaching all four drivers to reassemble incremental tool-call fragments live (OpenAI's indexed argument chunks, Anthropic's `input_json_delta` blocks, etc.), a real body of work rather than a small addition. Staying on the roadmap as its own task rather than shipping a version that mishandles a tool call arriving mid-stream.
+
+### Using tools in the built-in chat UI
+
+The agent module works from your own code regardless of any of this, but `/ai-chat` (the built-in chat window) can use it too — opt-in, currently wired up for the built-in web search tool:
+
+```env
+AI_CHAT_TOOLS_ENABLED=true
+AI_CHAT_ENABLED_TOOLS=web_search
+```
+
+The chat window shows a collapsible "🔧 Used N tools" line (same visual pattern as the reasoning-model "Thinking…" indicator) when a reply used one. Honest tradeoff from the scope note above: a tool-enabled reply doesn't stream token-by-token the way a normal reply does — it arrives as one complete message once the agent loop resolves, not a live typing effect. Still no slower than a normal request, just not character-by-character.
 
 ---
 
@@ -831,6 +878,16 @@ foreach (['ollama', 'deepseek', 'openai'] as $provider) {
         Log::warning("{$provider} failed: {$e->getMessage()}");
     }
 }
+```
+
+### Response Caching
+
+Opt-in — identical requests (same provider, model, messages, temperature, max tokens, and system prompt) hit your app's cache instead of the AI API. Never applies to `stream()` or a `tools()`-bearing call (caching either would defeat the point of one or skip a tool's real side effects).
+
+```env
+AI_CACHE_ENABLED=true
+AI_CACHE_TTL=3600          # seconds
+AI_CACHE_STORE=            # blank = your app's default cache store
 ```
 
 ### Token Estimation
@@ -993,6 +1050,10 @@ AI_ANTHROPIC_MODEL=claude-sonnet-4-20250514
 AI_DEEPSEEK_KEY=sk-xxxx
 AI_DEEPSEEK_MODEL=deepseek-chat
 
+# Groq
+AI_GROQ_KEY=gsk_xxxx
+AI_GROQ_MODEL=llama-3.3-70b-versatile
+
 # Gemini
 AI_GEMINI_KEY=your-api-key
 AI_GEMINI_MODEL=gemini-2.0-flash
@@ -1049,6 +1110,15 @@ AI_BRAVE_API_KEY=
 AI_RAG_QUEUE_INGESTION=false
 AI_CHAT_WEBHOOK_QUEUE=false
 AI_CHAT_MAX_LOADED_MESSAGES=500
+
+# Response caching (v2.7.0) — opt-in, off by default
+AI_CACHE_ENABLED=false
+AI_CACHE_TTL=3600
+AI_CACHE_STORE=
+
+# Tool-calling in the built-in chat UI (v2.7.0) — opt-in, off by default
+AI_CHAT_TOOLS_ENABLED=false
+AI_CHAT_ENABLED_TOOLS=web_search
 ```
 
 ---
@@ -1060,7 +1130,7 @@ vendor/bin/phpunit
 vendor/bin/phpunit --filter=test_ollama_chat
 ```
 
-Uses `Http::fake()` — no real API calls needed.
+Uses `Http::fake()` — no real API calls needed. CI runs the full suite against SQLite, MySQL, and Postgres (real GitHub Actions service containers for the latter two) — driver-specific SQL, like the raw `ALTER` in one of the migrations, only gets genuinely exercised on the database engines it's actually written for.
 
 ---
 
@@ -1180,9 +1250,12 @@ Either way, the sidebar's identity line and the Settings page's Gate (`manage-ai
 | v2.6 | Opt-in queued RAG ingestion + webhook delivery | ✅ Released |
 | v2.6 | Fix — attachment/project files leaked on disk after deletion | ✅ Released |
 | v2.6 | Bounded conversation-history loading for very long chats | ✅ Released |
-| v2.7 | Groq driver | 🔜 Planned |
-| v2.7 | Streaming the agent module's final answer after the tool-call loop resolves | 🔜 Planned |
-| v2.7 | Response caching | 🔜 Planned |
+| v2.7 | Groq driver | ✅ Released |
+| v2.7 | Response caching (opt-in) | ✅ Released |
+| v2.7 | Pluggable vector-store backend for RAG (`VectorStoreInterface` + a working pgvector implementation) | ✅ Released |
+| v2.7 | Tool-calling in the built-in chat UI | ✅ Released |
+| v2.7 | CI matrix — full suite against real MySQL and Postgres, not just SQLite | ✅ Released |
+| v2.8 | Streaming the agent module's final answer after the tool-call loop resolves | 🔜 Planned |
 | v2.6 | Pluggable vector-store backend (pgvector, etc.) for large RAG corpora | 🔜 Planned |
 
 ---

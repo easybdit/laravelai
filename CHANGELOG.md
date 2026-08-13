@@ -1,5 +1,51 @@
 # Changelog
 
+## v2.7.0 — 2026-08-14
+
+### ⚡ Groq driver
+
+A fifth OpenAI-compatible provider, alongside DeepSeek, Together AI, and custom endpoints — Groq's famously fast inference, same one-line switch as every other provider: `AI::provider('groq')->chat($messages)`. Gets tool-calling, health checks, and model listing for free by inheriting `OpenAIDriver`, same as DeepSeek/Together already did.
+
+```env
+AI_GROQ_KEY=gsk_...
+AI_GROQ_MODEL=llama-3.3-70b-versatile
+```
+
+### 💾 Response caching
+
+Opt-in (`AI_CACHE_ENABLED=true`, off by default). Identical requests — same provider, model, messages, temperature, max tokens, and system prompt — hit Laravel's cache instead of the AI API. Never applies to a streaming or tool-calling call (a cached response would defeat streaming's purpose, and could skip re-running a tool call's real side effects), so this is scoped purely to the plain `chat()` path. Uses whatever cache store the host app already has configured (`AI_CACHE_STORE` to point at a specific one, `AI_CACHE_TTL` for how long, default 1 hour).
+
+### 🗄️ Pluggable vector-store backend for RAG
+
+The built-in RAG search (an in-PHP cosine scan, memory-bounded since v2.3.0) is genuinely fine up to tens of thousands of chunks, but isn't a substitute for a real vector database at large scale. New `EasyAI\LaravelAI\RAG\Contracts\VectorStoreInterface` — bind your own implementation and `RAGManager` delegates `ingest()`/`search()`/`flush()`/a new `count()` to it entirely; nothing bound (the default, every existing install) keeps the exact same built-in DB-scan behavior, byte-for-byte.
+
+Ships with one real, working built-in: `RAG\VectorStores\PgVectorStore` for Postgres + the `pgvector` extension, via raw SQL (no new Composer dependency — pgvector is a Postgres extension, not a PHP library). One-time setup SQL is documented directly in the class. Want Pinecone, Weaviate, Milvus, or anything else instead? Implement the same four-method contract.
+
+One documented scope boundary: `searchAutoIndexed()` (the "Ask This Site" auto-indexer's prefix-matching search) isn't delegated — its multi-source prefix match doesn't fit a single-source `search()` contract, so it always uses the built-in table regardless of what's bound. Flagged clearly in both the interface's and the method's own docblocks so it's not a silent gap for anyone combining `auto_index` with a bound store.
+
+### 🔧 Tool-calling in the built-in chat UI
+
+The agent module (v2.5.0) was code-only until now — usable from your own code, but the built-in `/ai-chat` chat window had no way to actually use a tool. Opt-in (`AI_CHAT_TOOLS_ENABLED=true`, off by default): the chat window can now call the built-in web search tool mid-conversation, with a collapsible "🔧 Used N tools" status line (same visual pattern as the existing reasoning-model "Thinking…" indicator).
+
+Honest tradeoff, documented in the config: a tool-enabled reply doesn't stream token-by-token the way a normal reply does — the agent module's `run()` loop is non-streaming by design (see below), so a tool-enabled turn arrives as one complete chunk once the loop resolves, not a live typing effect. Still real-time in every other sense — the request itself is no slower than it would be without streaming.
+
+```env
+AI_CHAT_TOOLS_ENABLED=true
+AI_CHAT_ENABLED_TOOLS=web_search
+```
+
+### 🧪 CI now runs against MySQL and Postgres too
+
+The test suite ran against SQLite only until now — meaning driver-specific SQL added over the last few releases (the MySQL-specific `ALTER ... MODIFY` in the v2.6.0 status-enum migration, `Schema::rename()` in the v2.4.0 Commerce work) had literally never been exercised by CI at all, only by hand against a real database. New GitHub Actions matrix job runs the full suite against real MySQL and Postgres service containers too, alongside (not replacing) the existing SQLite run. `tests/TestCase.php` picks up `DB_CONNECTION`/`DB_HOST`/etc. when set and falls back to today's in-memory SQLite when they aren't — confirmed the fallback is completely unaffected via a full local run.
+
+### Not shipped this round, on purpose
+
+Streaming the agent module's `run()` loop's final answer was investigated and deliberately not built: every driver's streaming handler currently only parses text/thinking deltas, never tool-call deltas — building this properly means teaching all four drivers to reassemble incremental tool-call fragments from a live stream (OpenAI's indexed argument chunks, Anthropic's `input_json_delta` blocks, etc.), which is a real, separate body of work, not a small addition to `run()`. Rather than ship a version that silently mishandles a tool call arriving mid-stream, this is staying on the roadmap as its own dedicated task.
+
+28 new tests (Groq, response caching, vector-store delegation + regression proof, chat-UI tool calling). 186/186 passing overall.
+
+---
+
 ## v2.6.0 — 2026-08-14
 
 ### 🚀 The rest of the scalability pass: queues, an installer, and two storage leaks closed

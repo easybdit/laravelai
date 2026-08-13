@@ -51,6 +51,15 @@ return [
             'vision'  => false,
             'options' => ['temperature' => 0.7, 'max_tokens' => 2000],
         ],
+        'groq' => [
+            'driver'  => 'groq',
+            'api_key' => env('AI_GROQ_KEY'),
+            'url'     => env('AI_GROQ_URL', 'https://api.groq.com/openai/v1'),
+            'model'   => env('AI_GROQ_MODEL', 'llama-3.3-70b-versatile'),
+            'timeout' => (int) env('AI_GROQ_TIMEOUT', 60),
+            'vision'  => false,
+            'options' => ['temperature' => 0.7, 'max_tokens' => 2000],
+        ],
         'gemini' => [
             'driver'  => 'gemini',
             'api_key' => env('AI_GEMINI_KEY'),
@@ -161,6 +170,39 @@ return [
         'max_message_length' => (int) env('AI_CHAT_MAX_MESSAGE_LENGTH', 4000),
         'context_messages'   => (int) env('AI_CHAT_CONTEXT_MESSAGES', 10),
         'disable_storage'    => (bool) env('AI_CHAT_DISABLE_STORAGE', false),
+
+        /**
+         * Opt-in: let the built-in /ai-chat UI use the agent module's
+         * tool/function calling (v2.5.0) instead of always calling the
+         * plain streaming chat()/stream() path. Off by default —
+         * byte-identical existing behavior when disabled, same bar as
+         * every other opt-in feature in this file.
+         *
+         * When on, AIChatController::stream() builds the tool list from
+         * enabled_tools below and uses AbstractDriver::run() instead of
+         * stream(). Only built-in tools are wireable here for now (v1) —
+         * a host app's own custom Tool instances registered specifically
+         * for the chat UI (as opposed to their own code calling
+         * AI::provider()->tools([...])->run() directly, which always
+         * worked) is a bigger design question, left for a follow-up.
+         *
+         * run() is non-streaming (see README's Agent Module "Scope note"
+         * and the v2.5.0 CHANGELOG entry) — so a request that ends up
+         * using tools necessarily loses the token-by-token typing effect
+         * for that one reply: it blocks until the full (possibly
+         * tool-augmented) answer is ready, then sends it as a single
+         * `data: {"text": "..."}` chunk, same as every other SSE event
+         * this endpoint emits. This is an accepted, honest tradeoff, not
+         * a bug — streaming a tool-calling loop's intermediate rounds
+         * isn't supported anywhere in this package yet (tracked as v2.7
+         * in the README roadmap).
+         */
+        'tools_enabled' => (bool) env('AI_CHAT_TOOLS_ENABLED', false),
+
+        // Allow-list of which built-in tools the chat UI may use when
+        // tools_enabled is true. Unknown names are skipped, not fatal.
+        // Currently only 'web_search' (EasyAI\LaravelAI\Agent\Tools\WebSearchTool) is wired up.
+        'enabled_tools' => array_values(array_filter(array_map('trim', explode(',', (string) env('AI_CHAT_ENABLED_TOOLS', 'web_search'))))),
 
         // How many of a user's most recent sessions/projects the sidebar
         // loads at once — without this, a long-time user's entire history
@@ -407,6 +449,26 @@ return [
     'logging' => [
         'enabled' => (bool) env('AI_LOG_ENABLED', false),
         'channel' => env('AI_LOG_CHANNEL', 'stack'),
+    ],
+
+    /**
+     * Opt-in response cache for the plain chat() path — off by default,
+     * byte-identical existing behavior when disabled (same bar as
+     * ai.rag.queue_ingestion / ai.chat.webhook.queue). When enabled, a
+     * non-streaming, non-tool-calling chat() call is cached (keyed by
+     * provider + model + messages + temperature + max tokens + system
+     * prompt) via Laravel's own Cache facade, so it respects whatever
+     * cache backend the host app already has configured — this package
+     * never invents its own storage. Streaming (stream()) and tool-calling
+     * (tools()->chat()/run()) requests are never cached: a cached
+     * token-by-token stream makes no sense, and a cached tool-calling
+     * response would skip whatever side effects the tool call implies.
+     */
+    'cache' => [
+        'enabled' => (bool) env('AI_CACHE_ENABLED', false),
+        'ttl'     => (int) env('AI_CACHE_TTL', 3600),
+        // null = use the app's default cache store (config('cache.default')).
+        'store'   => env('AI_CACHE_STORE', null),
     ],
 
     'retry' => [

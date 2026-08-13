@@ -783,6 +783,7 @@ async function sendMessage(isRegenerate, regenText) {
     currentAbortController = new AbortController();
     let assistantId = null;
     let thinkBlock = null, thinkBody = null, thinkStart = null, thinkTimer = null;
+    let toolBlock = null, toolBody = null, toolCount = 0;
 
     function finalizeThinking() {
         if (!thinkTimer) return;
@@ -792,6 +793,15 @@ async function sendMessage(isRegenerate, regenText) {
         thinkBlock.classList.remove('live');
         thinkBlock.querySelector('summary').innerHTML = `🧠 Thought for ${secs}s`;
         thinkBlock.open = false;
+    }
+
+    // Collapsible status line for the agent-loop path (config('ai.chat.tools_enabled'))
+    // — mirrors the think-block pattern above. run() is non-streaming, so by
+    // the time a 'tool_call' event arrives the call has already executed;
+    // this just surfaces that it happened before the final answer renders.
+    function finalizeToolBlock() {
+        if (!toolBlock) return;
+        toolBlock.open = false;
     }
 
     try {
@@ -853,8 +863,28 @@ async function sendMessage(isRegenerate, regenText) {
                     thinkBody.textContent += d.thinking;
                     thinkBody.scrollTop = thinkBody.scrollHeight;
                     scrollBottom();
+                } else if (d.tool_call) {
+                    if (!toolBlock) {
+                        toolBlock = document.createElement('details');
+                        toolBlock.className = 'think-block';
+                        toolBlock.open = true;
+                        toolBlock.innerHTML = `<summary>🔧 Using tools…</summary><div class="think-body"></div>`;
+                        toolBody = toolBlock.querySelector('.think-body');
+                        bubbleWrap.insertBefore(toolBlock, div.closest('.bubble'));
+                    }
+                    toolCount++;
+                    const args = d.tool_call.arguments && Object.keys(d.tool_call.arguments).length
+                        ? ' ' + JSON.stringify(d.tool_call.arguments)
+                        : '';
+                    const line = document.createElement('div');
+                    line.textContent = `${d.tool_call.name}${args}`;
+                    toolBody.appendChild(line);
+                    toolBlock.querySelector('summary').innerHTML =
+                        `🔧 Used ${toolCount} tool${toolCount === 1 ? '' : 's'}`;
+                    scrollBottom();
                 } else if (d.text) {
                     finalizeThinking();
+                    finalizeToolBlock();
                     div.dataset.raw = (div.dataset.raw || '') + d.text;
                     div.innerHTML = marked.parse(div.dataset.raw);
                     scrollBottom();
@@ -874,6 +904,7 @@ async function sendMessage(isRegenerate, regenText) {
         }
     } finally {
         finalizeThinking();
+        finalizeToolBlock();
         div.classList.remove('typing-cursor');
         if (bubbleWrap && assistantId) {
             bubbleWrap.dataset.msgId = assistantId;

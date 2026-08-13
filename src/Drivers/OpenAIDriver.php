@@ -18,7 +18,7 @@ class OpenAIDriver extends AbstractDriver
         return 'openai';
     }
 
-    public function chat(array $messages): AIResponseInterface
+    protected function doChat(array $messages): AIResponseInterface
     {
         $messages = $this->prependSystemPrompt($messages);
         $formatted = MessageFormatter::normalize($messages, 'openai');

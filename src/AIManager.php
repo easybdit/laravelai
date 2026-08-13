@@ -7,6 +7,7 @@ use EasyAI\LaravelAI\Drivers\AnthropicDriver;
 use EasyAI\LaravelAI\Drivers\CustomDriver;
 use EasyAI\LaravelAI\Drivers\DeepSeekDriver;
 use EasyAI\LaravelAI\Drivers\GeminiDriver;
+use EasyAI\LaravelAI\Drivers\GroqDriver;
 use EasyAI\LaravelAI\Drivers\OllamaDriver;
 use EasyAI\LaravelAI\Drivers\OpenAIDriver;
 use EasyAI\LaravelAI\Drivers\TogetherDriver;
@@ -81,6 +82,11 @@ class AIManager extends Manager
     protected function createGeminiDriver(): GeminiDriver
     {
         return new GeminiDriver($this->getProviderConfig('gemini'));
+    }
+
+    protected function createGroqDriver(): GroqDriver
+    {
+        return new GroqDriver($this->getProviderConfig('groq'));
     }
 
     protected function createTogetherDriver(): TogetherDriver

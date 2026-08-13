@@ -44,3 +44,73 @@ jobs:
 
       - name: Run tests
         run: vendor/bin/phpunit
+
+  # In addition to (not replacing) the sqlite matrix above — several
+  # migrations have real driver-specific branches (e.g. the MySQL-only
+  # `ALTER … MODIFY` in 2026_08_14_000003_add_queued_status_to_project_files.php,
+  # vs. sqlite/pgsql's Schema::change() branch of the same migration) that
+  # sqlite alone never exercises. Pinned to one representative PHP/Laravel
+  # combo rather than the full version matrix above × 2 databases — DB
+  # driver correctness and PHP/Laravel version compatibility are
+  # orthogonal concerns, and crossing both would multiply CI cost for
+  # little extra signal.
+  test-db-matrix:
+    name: DB matrix — ${{ matrix.db }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        db: [mysql, pgsql]
+
+    services:
+      mysql:
+        image: mysql:8.0
+        env:
+          MYSQL_ALLOW_EMPTY_PASSWORD: yes
+          MYSQL_DATABASE: laravelai_test
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="mysqladmin ping --silent"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: laravelai_test
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    env:
+      DB_CONNECTION: ${{ matrix.db }}
+      DB_HOST: 127.0.0.1
+      DB_PORT: ${{ matrix.db == 'mysql' && '3306' || '5432' }}
+      DB_DATABASE: laravelai_test
+      DB_USERNAME: ${{ matrix.db == 'mysql' && 'root' || 'postgres' }}
+      DB_PASSWORD: ${{ matrix.db == 'mysql' && '' || 'postgres' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup PHP
+        uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.4'
+          extensions: pdo_mysql, pdo_pgsql
+          coverage: none
+
+      - name: Install dependencies
+        run: |
+          composer require "illuminate/support:12.*" "illuminate/http:12.*" "orchestra/testbench:10.*" --no-update
+          composer install --no-interaction --prefer-dist
+
+      - name: Run tests
+        run: vendor/bin/phpunit
