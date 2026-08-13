@@ -38,4 +38,30 @@ class ProjectController extends Controller
 
         return response()->json(['ok' => true]);
     }
+
+    /**
+     * Admin test-query tool — the Laravel port of the WordPress Knowledge
+     * Base "Test Query" panel. Inspect which chunks a query would retrieve
+     * (and the accurate full-corpus count for "how many X" questions)
+     * before shipping it in front of real users.
+     */
+    public function testQuery(Request $request)
+    {
+        $request->validate([
+            'query'  => 'required|string',
+            'source' => 'nullable|string',
+        ]);
+
+        $source = $request->input('source') ?: null;
+        $rag    = AI::rag();
+        if ($source) {
+            $rag->source($source);
+        }
+
+        return response()->json([
+            'query'   => $request->input('query'),
+            'count'   => $rag->countMatches($request->input('query'), $source),
+            'results' => $rag->search($request->input('query')),
+        ]);
+    }
 }

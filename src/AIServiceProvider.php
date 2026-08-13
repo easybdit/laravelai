@@ -22,6 +22,9 @@ class AIServiceProvider extends ServiceProvider
         // Register chat UI subpackage
         $this->app->register(\EasyAI\LaravelAI\Chat\ChatServiceProvider::class);
 
+        // Opt-in "Ask This Site" — no-op unless config('ai.rag.auto_index') lists models.
+        \EasyAI\LaravelAI\RAG\AutoIndexer::boot();
+
         if ($this->app->runningInConsole()) {
             $this->publishes([
                 __DIR__ . '/../config/ai.php' => config_path('ai.php'),

@@ -19,6 +19,10 @@ abstract class TestCase extends BaseTestCase
 
     protected function defineEnvironment($app): void
     {
+        // The chat routes run inside the 'web' middleware group (sessions,
+        // cookies, CSRF) — EncryptCookies needs a real app key to boot.
+        $app['config']->set('app.key', 'base64:' . base64_encode(random_bytes(32)));
+
         $app['config']->set('ai.default', 'ollama');
         $app['config']->set('ai.providers.ollama', [
             'driver'  => 'ollama',

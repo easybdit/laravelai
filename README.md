@@ -26,6 +26,8 @@
   <a href="#-built-in-chat-ui">Chat UI</a> •
   <a href="#-projects--knowledge-bases">Projects</a> •
   <a href="#-rag-built-in">RAG</a> •
+  <a href="#-security--trust">Security</a> •
+  <a href="#-chat-ux--personalization">UX &amp; Widget</a> •
   <a href="#-providers">Providers</a> •
   <a href="#-api-reference">API Reference</a> •
   <a href="#%EF%B8%8F-configuration">Configuration</a>
@@ -169,6 +171,10 @@ php artisan tinker
 | 🏷️ Auto-title | First message becomes session title |
 | 📁 Projects | RAG-powered knowledge bases (v1.4.0) |
 | 📦 Offline assets | No CDN dependency |
+| 🔒 Security suite | Rate limiting, access control, captcha, GDPR gate (v2.0.0) |
+| 📎 Attachments | Vision + document uploads mid-chat (v2.0.0) |
+| 🧩 Floating widget | `<x-laravelai::widget />` — embeddable anywhere (v2.0.0) |
+| 📊 Analytics | Usage dashboard, zero external tracking (v2.0.0) |
 
 ### Customize the view
 
@@ -182,15 +188,26 @@ php artisan vendor:publish --tag=ai-chat-views
 | Method | URL | Description |
 |--------|-----|-------------|
 | GET    | `/ai-chat` | Chat UI |
+| GET    | `/ai-chat/analytics` | Usage dashboard |
 | POST   | `/ai-chat/api/sessions` | Create session |
 | DELETE | `/ai-chat/api/sessions/{id}` | Delete session |
-| GET    | `/ai-chat/api/stream` | SSE streaming |
+| POST   | `/ai-chat/api/stream` | SSE streaming (POST — see note below) |
 | POST   | `/ai-chat/api/provider` | Switch provider |
+| GET    | `/ai-chat/api/captcha` | Fetch a math captcha challenge |
+| POST   | `/ai-chat/api/messages/{id}/feedback` | 👍/👎 a message |
+| POST   | `/ai-chat/api/attachments` | Upload a chat attachment (image/document) |
+| GET    | `/ai-chat/api/attachments/{id}` | Stream an attachment back |
+| DELETE | `/ai-chat/api/attachments/{id}` | Delete an attachment |
 | GET    | `/ai-chat/api/projects` | List projects |
 | POST   | `/ai-chat/api/projects` | Create project |
 | DELETE | `/ai-chat/api/projects/{id}` | Delete project |
+| GET    | `/ai-chat/api/projects/{id}/files` | List project files |
 | POST   | `/ai-chat/api/projects/{id}/files` | Upload & ingest file |
+| POST   | `/ai-chat/api/projects/{id}/files/{fid}/reprocess` | Re-chunk a file in place |
 | DELETE | `/ai-chat/api/projects/{id}/files/{fid}` | Delete file |
+| POST   | `/ai-chat/api/rag/test` | Inspect matched chunks for a query |
+
+> `/ai-chat/api/stream` moved from GET to POST in v2.0.0 — a 4000-character message no longer risks the URL length limit, and the built-in view reads the response via `fetch()` + a manual SSE parser (not `EventSource`) so blocked/rate-limited JSON error responses are actually readable.
 
 ---
 
@@ -278,6 +295,41 @@ php artisan ai:rag:ingest storage/docs/manual.txt --source=manual
 php artisan ai:rag:ingest storage/docs/ --flush
 ```
 
+### Accurate counting, test queries, reprocessing
+
+> **New in v2.0.0**
+
+```php
+// Full-corpus keyword scan for "how many X" questions — top-K semantic
+// search alone under-counts when relevant chunks rank outside K.
+AI::rag()->countMatches('invoice', 'project_5');
+```
+
+```
+POST /ai-chat/api/rag/test          { "query": "refund policy", "source": "project_5" }
+POST /ai-chat/api/projects/5/files/12/reprocess   # re-chunk in place, no re-upload
+```
+
+### Auto-index your own models ("Ask This Site")
+
+Keep RAG in sync with any Eloquent model on save/delete — opt-in, empty by default:
+
+```php
+// config/ai.php
+'rag' => [
+    'auto_index' => [
+        'posts' => [
+            'model'  => \App\Models\Post::class,
+            'source' => 'site_posts',
+            'text'   => fn ($post) => $post->title . "\n\n" . strip_tags($post->body),
+            'when'   => fn ($post) => $post->is_published, // optional
+        ],
+    ],
+],
+```
+
+Chat sessions with no project attached automatically pull context from every auto-indexed source once at least one entry is configured.
+
 ### RAG Configuration
 
 | `.env` Key | Default | Description |
@@ -289,6 +341,89 @@ php artisan ai:rag:ingest storage/docs/ --flush
 | `AI_RAG_TABLE` | `ai_documents` | Database table |
 
 ---
+
+## 🔒 Security & Trust
+
+> **New in v2.0.0** — everything below is config/env-driven (`config/ai.php` → `chat`); there's no settings database or admin panel, by design — your app already has its own way to manage config.
+
+| Setting | `.env` key | Default |
+|---|---|---|
+| Rate limit (per identity) | `AI_CHAT_RATE_LIMIT_MAX` / `_WINDOW` | 20 / 60s |
+| Rate limit (per IP, hard cap) | `AI_CHAT_RATE_LIMIT_IP_MAX` | 60 |
+| Access restriction | `AI_CHAT_ACCESS_RESTRICTION` | `everyone` (also: `auth`, `role`, `gate`) |
+| IP blocklist | `AI_CHAT_IP_BLOCKLIST` | — (comma-separated) |
+| Word filter | `AI_CHAT_WORD_FILTER_ENABLED` / `_WORDS` | off |
+| Prompt-injection detection | `AI_CHAT_PROMPT_INJECTION_DETECT` | off |
+| No-storage mode | `AI_CHAT_DISABLE_STORAGE` | off |
+| Math captcha (first message) | `AI_CHAT_CAPTCHA_ENABLED` | off |
+| Abuse-alert email | `AI_CHAT_ABUSE_ALERT_ENABLED` / `_EMAIL` | off |
+| GDPR consent gate | `AI_CHAT_GDPR_GATE_ENABLED` | off |
+| Lock system prompt | `AI_CHAT_LOCK_SYSTEM_PROMPT` | off |
+| Max message length | `AI_CHAT_MAX_MESSAGE_LENGTH` | 4000 |
+
+"Role" restriction looks for `$user->hasAnyRole([...])` (configurable method name — works with Spatie permission out of the box) or a `roles` collection/array on the user model. "Gate" restriction checks a named Laravel `Gate` you define yourself (`AI_CHAT_ACCESS_GATE`, defaults to `use-ai-chat`).
+
+Internal exception detail (e.g. "No API key configured for OpenAI") is only shown to callers who pass the same gate — everyone else gets a generic "temporarily unavailable" message. Set `AI_CHAT_SHOW_INTERNAL_ERRORS=true` to always show real errors (e.g. in a staging environment).
+
+## 💬 Chat UX & Personalization
+
+> **New in v2.0.0**
+
+Stop & regenerate, message timestamps, per-message and whole-conversation export, read-aloud (browser `SpeechSynthesis`), voice input (browser `SpeechRecognition` — Chrome/Edge/Safari), fullscreen mode, 👍/👎 feedback, and client-side session search all ship in the default `resources/views/chat.blade.php` — no configuration needed, some gated by `AI_CHAT_VOICE_INPUT_ENABLED` / `AI_CHAT_TTS_ENABLED` / `AI_CHAT_EXPORT_ENABLED`.
+
+Welcome message, suggested-question chips, a custom AI avatar, and accent/bubble colors are all `config('ai.chat.ui')` / env-driven:
+
+```env
+AI_CHAT_WELCOME_ENABLED=true
+AI_CHAT_WELCOME_MESSAGE="Hello! How can I help you today?"
+AI_CHAT_SUGGESTED_QUESTIONS="What can you help with?|Summarize a document|Write me an email"
+AI_CHAT_AVATAR_URL=https://example.com/bot-avatar.png
+AI_CHAT_COLOR_ACCENT=#6366f1
+```
+
+### Bot profiles
+
+Named presets — provider, title, system prompt — loadable per session:
+
+```php
+// config/ai.php
+'bot_profiles' => [
+    'support' => [
+        'label'         => 'Support Bot',
+        'provider'      => 'openai',
+        'system_prompt' => 'You are a friendly support agent for Acme Inc.',
+    ],
+],
+```
+
+```php
+POST /ai-chat/api/sessions  { "profile": "support" }
+```
+
+### Floating widget (embeddable anywhere)
+
+A self-contained launcher + chat panel — talks to the same session/stream API, ships its own scoped CSS and JS, and works on any Blade view without loading the full `/ai-chat` app:
+
+```blade
+<x-laravelai::widget position="bottom-right" label="Chat with us" profile="support" />
+```
+
+## 📎 Attachments & Vision
+
+> **New in v2.0.0** — `AI_CHAT_ATTACHMENTS_ENABLED=true`
+
+Upload images and documents (`.txt`/`.md`/`.pdf`) mid-chat. Documents are text-extracted and appended as context for **every** provider; images become real vision input for OpenAI, Anthropic, and Gemini (via a universal multipart message format translated per-provider), with a "this provider can't view images" fallback note for everyone else.
+
+## 📊 Analytics & Webhooks
+
+Visit `/ai-chat/analytics` for a zero-external-tracking dashboard — total conversations/messages, messages today, active chats (7d), most-used provider, a 7-day bar chart, and feedback stats — computed entirely from your own `chat_sessions`/`chat_messages` tables.
+
+```env
+AI_CHAT_WEBHOOK_URL=https://your-endpoint.example.com/hook
+AI_CHAT_WEBHOOK_SECRET=optional-hmac-secret
+```
+
+Fires a best-effort POST after every AI response with `session_id`, `user_message`, `ai_response`, `provider`, `timestamp` — and an `X-LaravelAI-Signature: sha256=...` header when a secret is set. Compatible with Zapier, Make, n8n, or any HTTP endpoint.
 
 ## 🤖 Providers
 
@@ -328,6 +463,44 @@ AI_ANTHROPIC_MODEL=claude-sonnet-4-20250514
 ```env
 AI_DEEPSEEK_KEY=sk-your-api-key
 AI_DEEPSEEK_MODEL=deepseek-chat
+```
+
+### Google Gemini
+
+```env
+AI_GEMINI_KEY=your-api-key
+AI_GEMINI_MODEL=gemini-2.0-flash
+```
+
+### Together AI
+
+```env
+AI_TOGETHER_KEY=your-api-key
+AI_TOGETHER_MODEL=meta-llama/Llama-3.3-70B-Instruct-Turbo
+
+# Optional: FLUX image generation via "/image a red fox in snow" in chat
+AI_TOGETHER_IMAGE_ENABLED=true
+```
+
+### Custom (any OpenAI-compatible endpoint)
+
+LM Studio, vLLM, OpenRouter, an in-house gateway — add as many named entries as you like in `config/ai.php`:
+
+```php
+'custom_providers' => [
+    'lmstudio' => [
+        'label'   => 'LM Studio (local)',
+        'url'     => 'http://127.0.0.1:1234/v1',
+        'api_key' => null,
+        'model'   => 'local-model',
+        'timeout' => 60,
+    ],
+],
+```
+
+```php
+AI::custom('lmstudio')->chat($messages);
+// or, in the chat UI provider selector: "custom:lmstudio"
 ```
 
 ---
@@ -410,7 +583,8 @@ try {
 | Method | Returns | Description |
 |--------|---------|-------------|
 | `AI::chat(array $messages)` | `AIResponse` | Chat with default provider |
-| `AI::provider(string $name)` | `AIProvider` | Switch provider |
+| `AI::provider(string $name)` | `AIProvider` | Switch provider — accepts `"custom:slug"` too |
+| `AI::custom(string $key)` | `CustomDriver` | Resolve a named custom OpenAI-compatible provider |
 | `AI::estimateTokens(string\|array)` | `int` | Estimate token count |
 | `AI::rag()` | `RAGManager` | Access RAG system |
 
@@ -437,6 +611,8 @@ try {
 | `->ask($question)` | RAG-powered Q&A |
 | `->source($name)` | Scope to one source |
 | `->flush($source?)` | Delete documents |
+| `->countMatches($term, $source?)` | Full-corpus keyword count for "how many X" questions |
+| `->searchAutoIndexed($query)` | Search everything AutoIndexer has indexed |
 
 ### Ollama-Only Methods
 
@@ -522,6 +698,15 @@ AI_ANTHROPIC_MODEL=claude-sonnet-4-20250514
 AI_DEEPSEEK_KEY=sk-xxxx
 AI_DEEPSEEK_MODEL=deepseek-chat
 
+# Gemini
+AI_GEMINI_KEY=your-api-key
+AI_GEMINI_MODEL=gemini-2.0-flash
+
+# Together AI
+AI_TOGETHER_KEY=your-api-key
+AI_TOGETHER_MODEL=meta-llama/Llama-3.3-70B-Instruct-Turbo
+AI_TOGETHER_IMAGE_ENABLED=false
+
 # RAG
 AI_RAG_PROVIDER=ollama
 AI_RAG_EMBED_MODEL=nomic-embed-text
@@ -531,6 +716,27 @@ AI_RAG_TABLE=ai_documents
 
 # RAG for small models — reduce chunk size and limit context
 # AI_OLLAMA_NUM_CTX=2048
+
+# Security & Trust (v2.0.0) — see the Security & Trust section above for the full list
+AI_CHAT_RATE_LIMIT_ENABLED=true
+AI_CHAT_RATE_LIMIT_MAX=20
+AI_CHAT_RATE_LIMIT_WINDOW=60
+AI_CHAT_ACCESS_RESTRICTION=everyone
+AI_CHAT_DISABLE_STORAGE=false
+AI_CHAT_CAPTCHA_ENABLED=false
+AI_CHAT_GDPR_GATE_ENABLED=false
+AI_CHAT_MAX_MESSAGE_LENGTH=4000
+
+# Chat UX & personalization (v2.0.0)
+AI_CHAT_WELCOME_ENABLED=false
+AI_CHAT_VOICE_INPUT_ENABLED=true
+AI_CHAT_TTS_ENABLED=true
+AI_CHAT_EXPORT_ENABLED=true
+AI_CHAT_ATTACHMENTS_ENABLED=false
+
+# Webhook (v2.0.0)
+AI_CHAT_WEBHOOK_URL=
+AI_CHAT_WEBHOOK_SECRET=
 ```
 
 ---
@@ -555,12 +761,17 @@ Uses `Http::fake()` — no real API calls needed.
 | v1.2 | Built-in RAG system + Ollama advanced | ✅ Released |
 | v1.3 | Built-in Chat UI | ✅ Released |
 | v1.4 | Projects + RAG scoping (self-hosted Claude Projects) | ✅ Released |
-| v2.0 | Function / Tool calling | 🔜 Planned |
-| v2.0 | Vision / Image input | 🔜 Planned |
+| v2.0 | Security & Trust Suite (rate limiting, access control, captcha, GDPR gate...) | ✅ Released |
+| v2.0 | Vision / Image input (OpenAI, Anthropic, Gemini) | ✅ Released |
+| v2.0 | Google Gemini + Together AI + custom OpenAI-compatible drivers | ✅ Released |
+| v2.0 | Chat attachments (images + documents) | ✅ Released |
+| v2.0 | Analytics dashboard + webhooks | ✅ Released |
+| v2.0 | Bot profiles + embeddable floating widget | ✅ Released |
+| v2.0 | Image generation (Together AI / FLUX, via `/image`) | ✅ Released |
+| v2.1 | Function / Tool calling | 🔜 Planned |
 | v2.1 | Groq driver | 🔜 Planned |
-| v2.1 | Google Gemini driver | 🔜 Planned |
 | v2.2 | Response caching | 🔜 Planned |
-| v3.0 | Image generation | 🔜 Planned |
+| v2.2 | Commerce bot kit (order/product Q&A against a host e-commerce schema) | 🔜 Planned |
 
 ---
 

@@ -1,5 +1,58 @@
 # Changelog
 
+## v2.0.0 — 2026-08-13
+
+### 🔒 Security & Trust Suite
+
+The Laravel equivalent of `easyit-ai-chat`'s v2.0 Security Suite, config/env-driven instead of a settings database:
+
+- **Rate limiting** — per-identity + per-IP, via Laravel's `RateLimiter` (`AI_CHAT_RATE_LIMIT_*`)
+- **Access restriction** — everyone / auth / role / a named `Gate` (`AI_CHAT_ACCESS_RESTRICTION`)
+- **IP blocklist**, **word filter**, **prompt-injection detection** (block or warn)
+- **No-storage mode** — `AI_CHAT_DISABLE_STORAGE=true` skips all DB writes for a request
+- **Math captcha** — signed, stateless, required once per fresh session
+- **Abuse-alert email** on rate-limit trips (via `Mail`)
+- **GDPR consent gate** — cookie-based accept banner before the chat activates
+- **Lock system prompt**, **configurable message-length cap**
+- **Public-safe error messages** — internal exception detail hidden from non-admins by default
+
+### 💬 Chat UX
+
+Stop & regenerate, message timestamps, per-message + whole-conversation export, read-aloud (TTS via `SpeechSynthesis`), voice input (`SpeechRecognition`), fullscreen mode, 👍/👎 message feedback (persisted, ownership-checked), and client-side session search.
+
+### 🎨 Personalization & embedding
+
+Welcome message, suggested-question chips, custom AI avatar, accent/bubble color tokens, named **bot profiles** (`config('ai.chat.bot_profiles')`), and a new embeddable **`<x-laravelai::widget />`** Blade component — a self-contained floating launcher + chat panel any host view can drop in, independent of the full `/ai-chat` app.
+
+### 🤖 New providers
+
+**Google Gemini**, **Together AI** (including `/image` and `/img` FLUX image generation), and named **custom OpenAI-compatible providers** (`AI::custom('lmstudio')` / `AI::provider('custom:lmstudio')`) — LM Studio, vLLM, OpenRouter, or any in-house gateway.
+
+### 📎 Attachments & vision
+
+Image + document uploads in chat. Documents are text-extracted and appended as context for every provider; images become vision input for OpenAI/Anthropic/Gemini via a new universal multipart message format (`MessageFormatter::withImage()` / `toProviderContent()`), with a "can't view images" fallback note for the rest.
+
+### 📊 Analytics & webhooks
+
+A zero-external-tracking `/ai-chat/analytics` dashboard (conversations, messages, 7-day chart, feedback stats — all from existing tables), and a fire-and-forget webhook after each AI response with an optional HMAC-SHA256 signature header.
+
+### 🧠 RAG refinements
+
+Full-corpus **accurate counting** for "how many X" questions (`RAGManager::countMatches()`), an admin **test-query** endpoint, **in-place reprocessing** of an uploaded file without re-uploading, and an opt-in **auto-indexer** (`config('ai.rag.auto_index')`) that keeps RAG in sync with any host-app Eloquent model on save/delete — the Laravel equivalent of "Ask This Site."
+
+### Identity & session scoping (foundational)
+
+Chat sessions are now scoped per identity — an authenticated user id, or a signed guest cookie (`ChatIdentity`) — mirroring how the WordPress plugin never leaks sessions across visitors. Sessions created before this migration (no identity recorded) remain visible rather than disappearing.
+
+### Fixes
+
+- **Routes now run inside the `web` middleware group** (`Route::middleware('web')->group(...)` in `ChatServiceProvider`) — previously `loadRoutesFrom()` registered them with no middleware at all, so `$request->session()` (used for provider switching) had no session store bound, and CSRF verification never actually ran.
+- **`/ai-chat/api/stream` is now a POST**, not GET-with-a-query-string — a 4000-character message no longer risks exceeding URL length limits, and the client reads the response via `fetch()` + a manual SSE parser instead of `EventSource`, so blocked/rate-limited JSON error responses (which aren't `text/event-stream`) are actually readable instead of silently failing `onerror` with no message.
+
+**New package files:** `src/Chat/Support/{ChatIdentity,ChatGuard,TextExtractor}.php`, `src/Chat/Exceptions/ChatBlockedException.php`, `src/Chat/Models/ChatAttachment.php`, `src/Chat/Controllers/{ChatAttachmentController,AnalyticsController}.php`, `src/Drivers/{GeminiDriver,TogetherDriver,CustomDriver}.php`, `src/RAG/AutoIndexer.php`, `resources/views/analytics.blade.php`, `resources/views/components/widget.blade.php`, plus three additive migrations (session identity, message rating, chat attachments).
+
+---
+
 ## v1.4.0 — 2026-05-10
 
 ### 🗂️ Projects + RAG Scoping (Self-hosted Claude Projects)
