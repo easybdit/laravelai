@@ -2,6 +2,21 @@
 
 ## v2.0.0 — 2026-08-13
 
+### 📤 Multi-format conversation export (PDF, Word, Excel, PowerPoint)
+
+Beyond the existing client-side `.txt` export, a conversation can now be downloaded server-side as PDF, Word (`.docx`), Excel (`.xlsx`), or PowerPoint (`.pptx`) from a new dropdown next to the existing export button. Each format is its own optional dependency, gracefully degrading with a clear `composer require ...` message rather than a fatal error when not installed — same pattern as `smalot/pdfparser` for RAG's PDF ingestion:
+
+- **PDF** — `dompdf/dompdf`. Full markdown rendering (headings, lists, code blocks, bold/italic) via a new small `PdfMarkdown` converter — deliberately not a full CommonMark implementation, just enough of what AI replies actually produce, so this doesn't pull in a whole markdown package on top of dompdf.
+- **Word** — `phpoffice/phpword`. Reuses the same `PdfMarkdown` output through PhpWord's own HTML importer, so message formatting isn't duplicated per format.
+- **Excel** — `phpoffice/phpspreadsheet`. One row per message (#, role, timestamp, content) — the natural shape for filtering/searching a long conversation rather than a document layout.
+- **PowerPoint** — `phpoffice/phppresentation`. One slide per message. Documented honestly as the odd fit of the four: slides don't paginate long text the way a document does, so this suits short-to-medium conversations best — PDF/Word read far better for a long transcript.
+
+All four routes are ownership-checked exactly like every other session-scoped endpoint. 6 new tests verify each format actually produces valid output (real PDF/zip magic bytes), not just "didn't crash."
+
+### 🔒 Settings encryption at rest
+
+Provider API keys saved through the new Settings UI are now encrypted before being written to the database (Laravel's `Crypt`/`APP_KEY`), not stored in plaintext — the masked-in-the-UI guarantee was already there, this closes the matching gap at the storage layer. Corrupted/undecryptable rows (e.g. after an `APP_KEY` rotation) are skipped rather than crashing boot or leaking ciphertext into `config()`. Also audited every provider driver's `health()` method to confirm none of them can leak a credential through an exception message (all fail safe internally already) — the Settings page's test-connection endpoint now returns a fixed generic message on any resolution error as well, for defense in depth.
+
 ### 💬 Claude/ChatGPT-style message layout
 
 User turns are now a right-aligned bubble with no avatar; assistant turns stay left-aligned, full-width, with the avatar — matching the familiar Claude.ai/ChatGPT layout instead of the previous symmetric two-column chat-log look. Pure CSS on the existing markup (`flex-direction: row-reverse` for `.msg-row.user`), so both server-rendered history and the JS-appended live message use the same rules with no HTML changes.

@@ -379,6 +379,8 @@ Gate::define('manage-ai-settings', fn ($user) => $user->isAdmin());
 
 Without that Gate defined, **every** request to the Settings page is refused — there's no "everyone" mode for editing API keys, regardless of how the main chat's own access restriction is configured. Secrets are masked in the UI (last 4 characters only) and never overwritten unless you actually type a new value; blanking a field deletes the override and falls back to `.env` again.
 
+**Storage:** API keys are encrypted (Laravel's `Crypt`, your app's `APP_KEY`) before ever touching the database — never stored in plaintext. Every provider driver's `health()` (used by the page's "Test connection" button) is also audited to confirm none of them can leak a credential through an exception message.
+
 **Auth-gating the chat itself** is a separate, independent knob — public by default:
 
 ```env
@@ -427,6 +429,19 @@ A self-contained launcher + chat panel — talks to the same session/stream API,
 ```blade
 <x-laravelai::widget position="bottom-right" label="Chat with us" profile="support" />
 ```
+
+### Export as PDF, Word, Excel, or PowerPoint
+
+The export button next to the chat header is a dropdown — plain text works with zero setup (client-side), the other four are optional server-side dependencies, install only the ones you want:
+
+```bash
+composer require dompdf/dompdf              # PDF
+composer require phpoffice/phpword          # Word (.docx)
+composer require phpoffice/phpspreadsheet   # Excel (.xlsx) — one row per message
+composer require phpoffice/phppresentation  # PowerPoint (.pptx) — one slide per message
+```
+
+Not installed yet? The download attempt shows exactly which command to run instead of failing silently. PowerPoint is the odd one out of the four — slides don't paginate long text the way a document does, so it suits short conversations best; PDF or Word read better for a long transcript.
 
 ## 📎 Attachments & Vision
 
@@ -816,6 +831,8 @@ Uses `Http::fake()` — no real API calls needed.
 | v2.0 | Image generation (Together AI / FLUX, via `/image`) | ✅ Released |
 | v2.0 | Provider Settings UI + auth guard for the chat area | ✅ Released |
 | v2.0 | Claude/ChatGPT-style message layout + responsive mobile UI | ✅ Released |
+| v2.0 | Multi-format export — PDF, Word, Excel, PowerPoint | ✅ Released |
+| v2.0 | Settings encryption at rest for provider API keys | ✅ Released |
 | v2.1 | Function / Tool calling | 🔜 Planned |
 | v2.1 | Groq driver | 🔜 Planned |
 | v2.2 | Response caching | 🔜 Planned |

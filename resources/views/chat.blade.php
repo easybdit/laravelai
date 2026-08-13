@@ -106,6 +106,11 @@
         .icon-btn { background: var(--bg); border: 1px solid var(--border); color: var(--text-muted); width: 30px; height: 30px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 0.85rem; transition: all 0.15s; flex-shrink: 0; }
         .icon-btn:hover { background: #e8eaef; color: var(--text); }
         .icon-btn.active { background: var(--accent-soft, #eeecfb); color: var(--accent); border-color: var(--accent); }
+        .export-menu { position: relative; }
+        .export-menu-list { display: none; position: absolute; top: 38px; right: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; box-shadow: var(--shadow); min-width: 190px; z-index: 60; overflow: hidden; }
+        .export-menu-list.open { display: block; }
+        .export-menu-list button { display: block; width: 100%; text-align: left; padding: 9px 14px; background: none; border: none; font-size: 0.82rem; color: var(--text); cursor: pointer; font-family: inherit; }
+        .export-menu-list button:hover { background: var(--bg); }
 
         /* ── MESSAGES ──
            Claude/ChatGPT layout: user turns are a right-aligned bubble with
@@ -404,7 +409,16 @@
                 @endif
                 <span class="header-provider" id="headerProvider">{{ $providers[$activeProvider]['icon'] }} {{ $providers[$activeProvider]['label'] }}</span>
                 @if($ui['export_enabled'] ?? true)
-                <button class="icon-btn" title="Export conversation" onclick="exportConversation()">⬇</button>
+                <div class="export-menu">
+                    <button class="icon-btn" title="Export conversation" onclick="toggleExportMenu(event)">⬇</button>
+                    <div class="export-menu-list" id="exportMenuList">
+                        <button onclick="exportConversation(); closeExportMenu();">📝 Plain text (.txt)</button>
+                        <button onclick="exportServerSide('pdf'); closeExportMenu();">📄 PDF</button>
+                        <button onclick="exportServerSide('docx'); closeExportMenu();">📘 Word (.docx)</button>
+                        <button onclick="exportServerSide('xlsx'); closeExportMenu();">📊 Excel (.xlsx)</button>
+                        <button onclick="exportServerSide('pptx'); closeExportMenu();">📽️ PowerPoint (.pptx)</button>
+                    </div>
+                </div>
                 @endif
                 <button class="icon-btn" id="fullscreenBtn" title="Fullscreen" onclick="toggleFullscreen()">⤢</button>
             </div>
@@ -1035,6 +1049,40 @@ function exportConversation() {
         lines.push(`[${role}]\n${text}\n`);
     });
     downloadText(lines.join('\n'), 'conversation-{{ $activeSession?->id }}.txt');
+}
+
+// ── EXPORT MENU (PDF / Word / Excel / PowerPoint — server-rendered) ──
+function toggleExportMenu(e) {
+    e.stopPropagation();
+    document.getElementById('exportMenuList')?.classList.toggle('open');
+}
+function closeExportMenu() {
+    document.getElementById('exportMenuList')?.classList.remove('open');
+}
+document.addEventListener('click', closeExportMenu);
+
+async function exportServerSide(format) {
+    if (!SESSION_ID) return;
+    const url = `{{ url('ai-chat/api/sessions') }}/${SESSION_ID}/export/${format}`;
+    try {
+        const r = await fetch(url);
+        if (!r.ok) {
+            let msg = 'Export failed.';
+            try { msg = (await r.json()).error || msg; } catch (e) {}
+            alert(msg);
+            return;
+        }
+        const blob = await r.blob();
+        const dispo = r.headers.get('Content-Disposition') || '';
+        const match = dispo.match(/filename="([^"]+)"/);
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = match ? match[1] : `conversation.${format}`;
+        a.click();
+        URL.revokeObjectURL(a.href);
+    } catch (e) {
+        alert('Export failed — connection error.');
+    }
 }
 
 // ── ATTACHMENTS ──

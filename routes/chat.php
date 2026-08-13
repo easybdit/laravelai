@@ -28,6 +28,9 @@ Route::prefix('ai-chat')->name('ai-chat.')->group(function () {
         Route::post('provider',             [AIChatController::class, 'switchProvider'])->name('provider');
         Route::get('captcha',               [AIChatController::class, 'captcha'])->name('captcha');
         Route::post('messages/{message}/feedback', [AIChatController::class, 'feedback'])->name('messages.feedback');
+        Route::get('sessions/{session}/export/{format}', [AIChatController::class, 'export'])
+            ->whereIn('format', ['pdf', 'docx', 'xlsx', 'pptx'])
+            ->name('sessions.export');
 
         // ── Attachments ──────────────────────────────────────────────────
         Route::post('attachments',                [ChatAttachmentController::class, 'store'])->name('attachments.store');

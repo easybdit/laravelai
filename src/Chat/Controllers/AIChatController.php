@@ -190,6 +190,55 @@ class AIChatController extends Controller
         return response()->json(['ok' => true, 'rating' => $message->rating]);
     }
 
+    private const EXPORTERS = [
+        'pdf'  => \EasyAI\LaravelAI\Chat\Support\Export\PdfExporter::class,
+        'docx' => \EasyAI\LaravelAI\Chat\Support\Export\DocxExporter::class,
+        'xlsx' => \EasyAI\LaravelAI\Chat\Support\Export\XlsxExporter::class,
+        'pptx' => \EasyAI\LaravelAI\Chat\Support\Export\PptxExporter::class,
+    ];
+
+    /**
+     * Server-side conversation export — PDF (dompdf), Word (phpword), Excel
+     * (phpspreadsheet), or PowerPoint (phppresentation), each an optional
+     * dependency exactly like smalot/pdfparser for RAG's PDF ingestion: a
+     * clear, actionable error rather than a fatal class-not-found when the
+     * matching package isn't installed. Client-side plain-text export
+     * (works with zero dependencies, even in no-storage mode) stays as-is
+     * in the chat view.
+     */
+    public function export(Request $request, ChatSession $session, string $format)
+    {
+        [$userId, $guestToken] = ChatIdentity::resolve($request);
+        if (!$session->isOwnedBy($userId, $guestToken)) {
+            abort(403);
+        }
+
+        $exporterClass = self::EXPORTERS[$format] ?? null;
+        if (!$exporterClass) {
+            abort(404);
+        }
+
+        if (!$exporterClass::isAvailable()) {
+            $package = match ($format) {
+                'pdf'   => 'dompdf/dompdf',
+                'docx'  => 'phpoffice/phpword',
+                'xlsx'  => 'phpoffice/phpspreadsheet',
+                'pptx'  => 'phpoffice/phppresentation',
+            };
+            return response()->json(['error' => "Exporting as .{$format} requires: composer require {$package}"], 501);
+        }
+
+        $title    = $session->title ?: 'AI Chat Conversation';
+        $messages = $session->messages()->orderBy('created_at')->get();
+        $contents = $exporterClass::build($title, $messages);
+        $filename = 'conversation-' . $session->id . '.' . $exporterClass::EXTENSION;
+
+        return response($contents, 200, [
+            'Content-Type'        => $exporterClass::MIME,
+            'Content-Disposition' => 'attachment; filename="' . $filename . '"',
+        ]);
+    }
+
     /**
      * Extracted document text is appended to the outgoing message (works
      * with every provider); the first attached image becomes a multipart

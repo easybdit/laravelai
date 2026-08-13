@@ -54,13 +54,17 @@ class SettingsController extends Controller
             }
         }
 
-        return view('laravelai::settings', [
-            'providers'       => $providers,
-            'providerLabels'  => $this->providerLabels(),
-            'secretFields'    => self::SECRET_FIELDS,
-            'defaultProvider' => config('ai.default'),
-            'status'          => $request->session()->get('status'),
-        ]);
+        // Even masked, this page shouldn't sit in a shared/proxy cache or a
+        // shared computer's back button history.
+        return response()
+            ->view('laravelai::settings', [
+                'providers'       => $providers,
+                'providerLabels'  => $this->providerLabels(),
+                'secretFields'    => self::SECRET_FIELDS,
+                'defaultProvider' => config('ai.default'),
+                'status'          => $request->session()->get('status'),
+            ])
+            ->header('Cache-Control', 'no-store, private');
     }
 
     public function update(Request $request)
@@ -113,13 +117,24 @@ class SettingsController extends Controller
         try {
             $ok = AI::provider($request->input('provider'))->health();
             return response()->json(['ok' => $ok]);
-        } catch (\Throwable $e) {
-            return response()->json(['ok' => false, 'error' => $e->getMessage()]);
+        } catch (\Throwable) {
+            // Every driver's health() already fails safe internally and
+            // never leaks its exception message (verified — none of them
+            // put a credential anywhere an exception message could echo it
+            // back). This outer catch only ever fires on provider
+            // *resolution* errors (e.g. an unknown provider name), but a
+            // generic message here costs nothing and keeps that guarantee
+            // airtight even if a future driver's exception text changes.
+            return response()->json(['ok' => false, 'error' => 'Could not reach this provider.']);
         }
     }
 
     private function save(string $key, mixed $value): void
     {
+        if (SettingsOverlay::isSecretKey($key) && is_string($value) && $value !== '') {
+            $value = SettingsOverlay::encryptForStorage($value);
+        }
+
         AiSetting::updateOrCreate(['key' => $key], ['value' => json_encode($value)]);
     }
 

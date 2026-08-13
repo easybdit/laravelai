@@ -3,7 +3,9 @@
 namespace EasyAI\LaravelAI\Chat\Support;
 
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Crypt;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 
 /**
@@ -31,6 +33,9 @@ class SettingsOverlay
     private const CACHE_KEY = 'laravelai:settings-overlay';
     private const CACHE_TTL = 30; // seconds — bounds DB load without needing manual cache invalidation everywhere
 
+    /** Marker prefix on a stored value that means "encrypt(...)  was applied before storing." */
+    private const ENC_PREFIX = 'enc:v1:';
+
     public static function apply(): void
     {
         try {
@@ -38,11 +43,29 @@ class SettingsOverlay
                 if (!Schema::hasTable('ai_settings')) {
                     return [];
                 }
+                // Cached as-stored (still encrypted for secret keys) — the
+                // cache layer never holds a decrypted credential, only the
+                // in-memory config() array does, for the lifetime of this
+                // one request/process.
                 return DB::table('ai_settings')->pluck('value', 'key')->all();
             });
 
             foreach ($rows as $key => $rawValue) {
-                config([$key => json_decode((string) $rawValue, true)]);
+                $value = json_decode((string) $rawValue, true);
+
+                if (is_string($value) && str_starts_with($value, self::ENC_PREFIX)) {
+                    try {
+                        $value = Crypt::decryptString(substr($value, strlen(self::ENC_PREFIX)));
+                    } catch (\Throwable) {
+                        // APP_KEY rotated, or the row is corrupt — skip this
+                        // one key rather than overwrite config() with
+                        // ciphertext or crash the whole boot over it.
+                        Log::warning("laraveleasyai: could not decrypt stored setting [{$key}] — falling back to config()/.env for it.");
+                        continue;
+                    }
+                }
+
+                config([$key => $value]);
             }
         } catch (\Throwable) {
             // A settings-table/cache problem must never stop the app from booting.
@@ -57,5 +80,22 @@ class SettingsOverlay
         } catch (\Throwable) {
             // Non-fatal — worst case the overlay is briefly stale until the TTL expires.
         }
+    }
+
+    /**
+     * Keys matching this are encrypted before being written to ai_settings
+     * and decrypted on the way back out — credentials never sit in the
+     * database in plaintext. Anything ending in "api_key" (every provider's
+     * secret field) qualifies; add more suffixes here if a future provider
+     * names its secret field something else.
+     */
+    public static function isSecretKey(string $key): bool
+    {
+        return (bool) preg_match('/(api_key|secret|token)$/i', $key);
+    }
+
+    public static function encryptForStorage(string $plaintext): string
+    {
+        return self::ENC_PREFIX . Crypt::encryptString($plaintext);
     }
 }

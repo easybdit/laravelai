@@ -63,6 +63,43 @@ class SettingsTest extends TestCase
         $this->assertSame('openai', config('ai.default'));
     }
 
+    public function test_api_keys_are_encrypted_at_rest_not_stored_as_plaintext(): void
+    {
+        Gate::define('manage-ai-settings', fn () => true);
+        $this->actingAs($this->fakeUser());
+
+        $this->post('/ai-chat/settings', [
+            'default_provider' => 'openai',
+            'providers' => ['openai' => ['api_key' => 'sk-super-secret-value', 'model' => 'gpt-4o-mini', 'timeout' => '60']],
+        ])->assertRedirect();
+
+        $stored = AiSetting::where('key', 'ai.providers.openai.api_key')->first();
+        $this->assertNotNull($stored);
+        $this->assertStringNotContainsString('sk-super-secret-value', $stored->getRawOriginal('value'));
+
+        // ...but a non-secret field right next to it is stored in the clear (nothing to protect there).
+        $model = AiSetting::where('key', 'ai.providers.openai.model')->first();
+        $this->assertStringContainsString('gpt-4o-mini', $model->getRawOriginal('value'));
+    }
+
+    public function test_hidden_attribute_keeps_value_out_of_accidental_serialization(): void
+    {
+        $setting = AiSetting::create(['key' => 'ai.providers.openai.api_key', 'value' => json_encode('sk-original')]);
+
+        $this->assertArrayNotHasKey('value', $setting->toArray());
+    }
+
+    public function test_a_corrupted_encrypted_value_is_skipped_not_fatal(): void
+    {
+        AiSetting::create(['key' => 'ai.providers.openai.api_key', 'value' => json_encode('enc:v1:not-actually-valid-ciphertext')]);
+        SettingsOverlay::forgetCache();
+
+        // Must not throw — the whole point of "never break boot" — and the
+        // key is simply skipped, leaving whatever config()/.env already had.
+        SettingsOverlay::apply();
+        $this->addToAssertionCount(1);
+    }
+
     public function test_submitting_the_masked_placeholder_does_not_overwrite_the_real_secret(): void
     {
         Gate::define('manage-ai-settings', fn () => true);
