@@ -1,5 +1,17 @@
 # Changelog
 
+## v2.3.0 — 2026-08-14
+
+### ⚡ RAG search no longer loads the entire corpus into memory
+
+`RAGManager::search()`, `searchAutoIndexed()`, and `countMatches()` all loaded every matching row — including every row's full embedding vector — via `->get()` before scoring or counting. Harmless at a few hundred chunks, a real problem as a knowledge base grows: RAG usage compounds with every document ingested, unlike most other tables in this package.
+
+- All three now scan in bounded batches (`chunkById(500, ...)`), keeping only the running top-K scored results in memory instead of the whole corpus. Still an O(corpus) *scan* — there's no ANN index, by design, since that's what keeps this dependency-free by default — just no longer an O(corpus) *memory allocation*.
+- New `config('ai.rag.max_scan_rows')` (default 50,000) caps how much a single search will scan before returning whatever it found, logging a warning rather than letting one query run unbounded. A slower-than-ideal answer beats a request that never returns.
+- Zero test coverage existed for `RAGManager` at all before this — 6 new tests now cover ranking correctness, `top_k`, source scoping, the bounded count, and the new cap actually engaging (and *not* firing under normal corpus sizes).
+
+---
+
 ## v2.2.0 — 2026-08-14
 
 ### 🔌 Pluggable identity resolution — for SPAs that don't use Laravel sessions

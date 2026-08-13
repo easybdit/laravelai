@@ -3,6 +3,7 @@ namespace EasyAI\LaravelAI\RAG;
 
 use EasyAI\LaravelAI\Facades\AI;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 
 class RAGManager
 {
@@ -50,22 +51,13 @@ class RAGManager
         $queryVector = $this->embed($query);
 
         $dbQuery = DB::table(config('ai.rag.table'))
-            ->select(['content', 'source', 'embedding']);
+            ->select(['id', 'content', 'source', 'embedding']);
 
         if ($this->sourceFilter) {
             $dbQuery->where('source', $this->sourceFilter);
         }
 
-        $results = $dbQuery->get()
-            ->map(fn($row) => [
-                'content' => $row->content,
-                'source'  => $row->source,
-                'score'   => $this->cosine($queryVector, json_decode($row->embedding, true)),
-            ])
-            ->sortByDesc('score')
-            ->take(config('ai.rag.top_k', 3))
-            ->values()
-            ->toArray();
+        $results = $this->topKScan($dbQuery, $queryVector, (int) config('ai.rag.top_k', 3));
 
         $this->sourceFilter = null;
 
@@ -88,25 +80,15 @@ class RAGManager
 
         $queryVector = $this->embed($query);
 
-        $results = DB::table(config('ai.rag.table'))
-            ->select(['content', 'source', 'embedding'])
+        $dbQuery = DB::table(config('ai.rag.table'))
+            ->select(['id', 'content', 'source', 'embedding'])
             ->where(function ($q) use ($prefixes) {
                 foreach ($prefixes as $prefix) {
                     $q->orWhere('source', 'like', $prefix . ':%');
                 }
-            })
-            ->get()
-            ->map(fn ($row) => [
-                'content' => $row->content,
-                'source'  => $row->source,
-                'score'   => $this->cosine($queryVector, json_decode($row->embedding, true)),
-            ])
-            ->sortByDesc('score')
-            ->take(config('ai.rag.top_k', 3))
-            ->values()
-            ->toArray();
+            });
 
-        return $results;
+        return $this->topKScan($dbQuery, $queryVector, (int) config('ai.rag.top_k', 3));
     }
 
     /**
@@ -128,21 +110,28 @@ class RAGManager
             str_ends_with($term, 's') ? mb_substr($term, 0, -1) : $term . 's',
         ]));
 
-        $query = DB::table(config('ai.rag.table'))->select(['content']);
+        $query = DB::table(config('ai.rag.table'))->select(['id', 'content']);
         if ($source) {
             $query->where('source', $source);
         }
 
+        // Processed in bounded batches (chunkById) rather than ->get() —
+        // a full-corpus scan already has to visit every row here (there's
+        // no way to count matches without reading the content), but there
+        // is no reason the *entire* corpus needs to sit in memory at once
+        // to do it.
         $count = 0;
-        foreach ($query->get() as $row) {
-            $content = mb_strtolower($row->content);
-            foreach ($variants as $variant) {
-                if ($variant !== '' && str_contains($content, $variant)) {
-                    $count++;
-                    break;
+        $query->chunkById(500, function ($rows) use (&$count, $variants) {
+            foreach ($rows as $row) {
+                $content = mb_strtolower($row->content);
+                foreach ($variants as $variant) {
+                    if ($variant !== '' && str_contains($content, $variant)) {
+                        $count++;
+                        break;
+                    }
                 }
             }
-        }
+        });
 
         return $count;
     }
@@ -202,5 +191,53 @@ class RAGManager
         }
         $denom = sqrt($normA) * sqrt($normB);
         return $denom > 0 ? $dot / $denom : 0.0;
+    }
+
+    /**
+     * Cosine-scores $query's matches in bounded batches (chunkById) instead
+     * of materializing the whole result set — including every row's
+     * decoded embedding vector — into memory at once via ->get(). The
+     * running "best so far" list is also re-trimmed to $k after every
+     * batch, so memory stays roughly constant regardless of corpus size:
+     * this is still an O(corpus) *scan* (no ANN index, by design — no
+     * external vector DB required for the zero-setup default), just no
+     * longer an O(corpus) *memory allocation*.
+     *
+     * Stops early at config('ai.rag.max_scan_rows') with a logged warning
+     * rather than let one search take an unbounded amount of time — a
+     * slower-than-ideal answer beats a request that never returns.
+     */
+    private function topKScan($query, array $queryVector, int $k): array
+    {
+        $k = max(1, $k);
+        $best    = [];
+        $scanned = 0;
+        $maxScan = max(1, (int) config('ai.rag.max_scan_rows', 50000));
+        $capped  = false;
+
+        $query->chunkById(500, function ($rows) use (&$best, &$scanned, $queryVector, $k, $maxScan, &$capped) {
+            foreach ($rows as $row) {
+                $best[] = [
+                    'content' => $row->content,
+                    'source'  => $row->source,
+                    'score'   => $this->cosine($queryVector, json_decode($row->embedding, true) ?: []),
+                ];
+            }
+            $scanned += count($rows);
+
+            usort($best, fn ($a, $b) => $b['score'] <=> $a['score']);
+            $best = array_slice($best, 0, $k);
+
+            if ($scanned >= $maxScan) {
+                $capped = true;
+                return false; // stop chunking — max_scan_rows reached
+            }
+        });
+
+        if ($capped) {
+            Log::warning("laraveleasyai: RAG search stopped after scanning {$maxScan} rows (config('ai.rag.max_scan_rows')) — results may be incomplete for this corpus size. Consider a dedicated vector store at this scale.");
+        }
+
+        return array_values($best);
     }
 }

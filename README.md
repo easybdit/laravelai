@@ -402,6 +402,7 @@ Chat sessions with no project attached automatically pull context from every aut
 | `AI_RAG_CHUNK_SIZE` | `2000` | Max chars per chunk |
 | `AI_RAG_TOP_K` | `3` | Chunks retrieved per query |
 | `AI_RAG_TABLE` | `ai_documents` | Database table |
+| `AI_RAG_MAX_SCAN_ROWS` | `50000` | Safety cap on rows scanned per search — raise it if your knowledge base is genuinely bigger and you'd rather wait than get a capped answer |
 
 ---
 
