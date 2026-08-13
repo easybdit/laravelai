@@ -2,6 +2,14 @@
 
 ## v2.0.0 — 2026-08-13
 
+### 🧠 Reasoning-model ("thinking") visibility
+
+Reasoning models (qwen3 and similar) stream a separate `thinking` field ahead of the real answer — often 10–30+ seconds of nothing visible at all, which reads as a hung request. Found live against a real Ollama deployment: a plain "hello" took 40 seconds end-to-end, ~22 of it silent.
+
+- `OllamaDriver::stream()` now forwards `thinking` chunks distinctly from `content` chunks (2nd callback argument) — the built-in chat UI renders them live as a collapsible **"🧠 Thinking… Ns"** block that auto-collapses to "Thought for Ns" once the real answer starts, instead of a silent gap.
+- New `->think(bool)` builder method + `AI_OLLAMA_THINK` config to skip reasoning mode entirely when you'd rather have a faster, non-reasoning response.
+- Callback compatibility is arity-checked via reflection: a single-parameter callback (the documented `stream()` pattern used before this release) never receives `thinking` chunks at all, rather than silently having reasoning text merged into its content — verified by a regression test.
+
 ### 🔒 Security & Trust Suite
 
 The Laravel equivalent of `easyit-ai-chat`'s v2.0 Security Suite, config/env-driven instead of a settings database:

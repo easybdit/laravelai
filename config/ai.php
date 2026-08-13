@@ -9,6 +9,13 @@ return [
             'model'      => env('AI_OLLAMA_MODEL', 'qwen2:1.5b'),
             'timeout'    => (int) env('AI_OLLAMA_TIMEOUT', 120),
             'keep_alive' => env('AI_OLLAMA_KEEP_ALIVE'),
+            // Reasoning models (qwen3, etc.) "think" before answering by
+            // default — often adding many seconds of latency for zero
+            // visible benefit on simple questions. null = model's own
+            // default; true/false explicitly turns it on/off for every
+            // request against this provider (override per-call with
+            // ->think()).
+            'think'      => filter_var(env('AI_OLLAMA_THINK'), FILTER_VALIDATE_BOOL, FILTER_NULL_ON_FAILURE),
             'options'    => ['temperature' => 0.7],
         ],
         'openai' => [

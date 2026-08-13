@@ -21,6 +21,7 @@ abstract class AbstractDriver implements AIProviderInterface
     protected string|int|null $currentKeepAlive = null;
     protected string|array|null $currentFormat = null;
     protected array $currentOptions = [];
+    protected ?bool $currentThink = null;
 
     public function __construct(array $config)
     {
@@ -73,6 +74,12 @@ abstract class AbstractDriver implements AIProviderInterface
     public function options(array $options): static
     {
         $this->currentOptions = $options;
+        return $this;
+    }
+
+    public function think(bool $think): static
+    {
+        $this->currentThink = $think;
         return $this;
     }
 
@@ -146,5 +153,6 @@ abstract class AbstractDriver implements AIProviderInterface
         $this->currentKeepAlive    = null;
         $this->currentFormat       = null;
         $this->currentOptions      = [];
+        $this->currentThink        = null;
     }
 }

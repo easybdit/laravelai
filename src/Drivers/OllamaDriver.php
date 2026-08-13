@@ -38,6 +38,15 @@ class OllamaDriver extends AbstractDriver
             $body['keep_alive'] = $this->currentKeepAlive;
         }
 
+        // Reasoning/"thinking" mode (qwen3 and similar) — an explicit
+        // ->think() call wins, otherwise fall back to the provider's
+        // configured default (config('ai.providers.ollama.think')); leaving
+        // both unset lets Ollama use the model's own default.
+        $think = $this->currentThink ?? ($this->config['think'] ?? null);
+        if ($think !== null) {
+            $body['think'] = $think;
+        }
+
         $this->log('Request', ['model' => $this->currentModel, 'messages_count' => count($messages)]);
 
         try {
@@ -118,6 +127,52 @@ class OllamaDriver extends AbstractDriver
     {
         $callback = $this->streamCallback;
         $fullContent = '';
+        $doneResult = null;
+
+        // Reasoning models (qwen3, etc.) stream a separate "thinking" field
+        // ahead of the real "content" — often for many seconds with nothing
+        // in "content" at all. Forwarded as a distinctly-tagged chunk (2nd
+        // callback arg) so callers can show live progress instead of dead
+        // air. A plain PHP call still *passes* that 2nd argument to a
+        // 1-parameter closure (it's simply unbound, not rejected) — which
+        // would silently mix raw thinking text into a caller's content
+        // stream. Checked once via reflection so a legacy single-parameter
+        // callback never receives thinking chunks at all, rather than
+        // getting them merged in unannounced.
+        $callbackAcceptsType = (new \ReflectionFunction(\Closure::fromCallable($callback)))->getNumberOfParameters() > 1;
+
+        $handleLine = function (string $line) use ($callback, $callbackAcceptsType, &$fullContent, &$doneResult, $body) {
+            $line = trim($line);
+            if ($line === '') {
+                return;
+            }
+            $json = json_decode($line, true);
+            if (!$json) {
+                return;
+            }
+
+            $thinkChunk = $json['message']['thinking'] ?? '';
+            if ($thinkChunk !== '' && $callbackAcceptsType) {
+                $callback($thinkChunk, 'thinking');
+            }
+
+            $chunk = $json['message']['content'] ?? '';
+            if ($chunk !== '') {
+                $fullContent .= $chunk;
+                $callbackAcceptsType ? $callback($chunk, 'content') : $callback($chunk);
+            }
+
+            if (!empty($json['done'])) {
+                $doneResult = new AIResponse(
+                    content:          $fullContent,
+                    promptTokens:     $json['prompt_eval_count'] ?? $this->estimateTokens(json_encode($body['messages'])),
+                    completionTokens: $json['eval_count'] ?? $this->estimateTokens($fullContent),
+                    model:            $json['model'] ?? $this->currentModel,
+                    provider:         'ollama',
+                    raw:              $json,
+                );
+            }
+        };
 
         $response = Http::timeout($this->getTimeout())
             ->withOptions(['stream' => true])
@@ -126,49 +181,30 @@ class OllamaDriver extends AbstractDriver
         $stream = $response->toPsrResponse()->getBody();
         $buffer = '';
 
-        while (!$stream->eof()) {
+        while (!$stream->eof() && !$doneResult) {
             $buffer .= $stream->read(1024);
             $lines = explode("\n", $buffer);
             $buffer = array_pop($lines); // keep incomplete line
 
             foreach ($lines as $line) {
-                $line = trim($line);
-                if (empty($line)) continue;
-
-                $json = json_decode($line, true);
-                if (!$json) continue;
-
-                $chunk = $json['message']['content'] ?? '';
-                if ($chunk !== '') {
-                    $fullContent .= $chunk;
-                    $callback($chunk);
-                }
-
-                if (!empty($json['done'])) {
-                    $result = new AIResponse(
-                        content:          $fullContent,
-                        promptTokens:     $json['prompt_eval_count'] ?? $this->estimateTokens(json_encode($body['messages'])),
-                        completionTokens: $json['eval_count'] ?? $this->estimateTokens($fullContent),
-                        model:            $json['model'] ?? $this->currentModel,
-                        provider:         'ollama',
-                        raw:              $json,
-                    );
-                    $this->resetOverrides();
-                    return $result;
+                $handleLine($line);
+                if ($doneResult) {
+                    break;
                 }
             }
         }
 
+        if ($doneResult) {
+            $this->resetOverrides();
+            return $doneResult;
+        }
+
         // A final line with no trailing newline (arrives in the same read()
-        // that hits EOF) would otherwise sit in $buffer and never get
-        // parsed — process whatever's left over the same way.
-        $line = trim($buffer);
-        if ($line !== '' && ($json = json_decode($line, true))) {
-            $chunk = $json['message']['content'] ?? '';
-            if ($chunk !== '') {
-                $fullContent .= $chunk;
-                $callback($chunk);
-            }
+        // that hits EOF) would otherwise sit in $buffer and never get parsed.
+        $handleLine($buffer);
+        if ($doneResult) {
+            $this->resetOverrides();
+            return $doneResult;
         }
 
         $this->resetOverrides();

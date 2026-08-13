@@ -144,6 +144,16 @@
         .regen-btn { font-size: 0.76rem; color: var(--text-muted); background: var(--surface); border: 1px solid var(--border); padding: 5px 12px; border-radius: 8px; cursor: pointer; }
         .regen-btn:hover { background: var(--bg); color: var(--text); }
 
+        /* ── THINKING (reasoning-model live progress) ── */
+        .think-block { margin: 0 0 8px; }
+        .think-block summary { cursor: pointer; font-size: 0.76rem; color: var(--text-muted); list-style: none; display: inline-flex; align-items: center; gap: 5px; padding: 3px 0; user-select: none; }
+        .think-block summary::-webkit-details-marker { display: none; }
+        .think-block summary::before { content: '▸'; font-size: 0.65rem; transition: transform 0.15s; display: inline-block; }
+        .think-block[open] summary::before { transform: rotate(90deg); }
+        .think-block.live summary { animation: pulse 1.6s infinite; }
+        .think-block .think-timer { font-variant-numeric: tabular-nums; }
+        .think-block .think-body { font-size: 0.78rem; font-style: italic; color: var(--text-muted); background: var(--bg); border-left: 2px solid var(--border); padding: 8px 10px; margin-top: 4px; border-radius: 0 8px 8px 0; max-height: 160px; overflow-y: auto; white-space: pre-wrap; }
+
         /* ── CAPTCHA / GDPR ── */
         .gdpr-overlay { position: absolute; inset: 0; background: rgba(20,18,28,0.55); display: none; align-items: flex-end; justify-content: center; z-index: 50; }
         .gdpr-overlay.open { display: flex; }
@@ -680,6 +690,17 @@ async function sendMessage(isRegenerate, regenText) {
 
     currentAbortController = new AbortController();
     let assistantId = null;
+    let thinkBlock = null, thinkBody = null, thinkStart = null, thinkTimer = null;
+
+    function finalizeThinking() {
+        if (!thinkTimer) return;
+        clearInterval(thinkTimer);
+        thinkTimer = null;
+        const secs = Math.max(1, Math.round((Date.now() - thinkStart) / 1000));
+        thinkBlock.classList.remove('live');
+        thinkBlock.querySelector('summary').innerHTML = `🧠 Thought for ${secs}s`;
+        thinkBlock.open = false;
+    }
 
     try {
         const response = await fetch('{{ route("ai-chat.stream") }}', {
@@ -720,9 +741,28 @@ async function sendMessage(isRegenerate, regenText) {
                 try { d = JSON.parse(line); } catch (e) { continue; }
 
                 if (d.error) {
+                    finalizeThinking();
                     div.textContent = '⚠ ' + d.error;
                     div.classList.remove('typing-cursor');
+                } else if (d.thinking) {
+                    if (!thinkBlock) {
+                        thinkStart = Date.now();
+                        thinkBlock = document.createElement('details');
+                        thinkBlock.className = 'think-block live';
+                        thinkBlock.open = true;
+                        thinkBlock.innerHTML = `<summary>🧠 Thinking… <span class="think-timer">0s</span></summary><div class="think-body"></div>`;
+                        thinkBody = thinkBlock.querySelector('.think-body');
+                        bubbleWrap.insertBefore(thinkBlock, div.closest('.bubble'));
+                        thinkTimer = setInterval(() => {
+                            const el = thinkBlock.querySelector('.think-timer');
+                            if (el) el.textContent = Math.round((Date.now() - thinkStart) / 1000) + 's';
+                        }, 500);
+                    }
+                    thinkBody.textContent += d.thinking;
+                    thinkBody.scrollTop = thinkBody.scrollHeight;
+                    scrollBottom();
                 } else if (d.text) {
+                    finalizeThinking();
                     div.dataset.raw = (div.dataset.raw || '') + d.text;
                     div.innerHTML = marked.parse(div.dataset.raw);
                     scrollBottom();
@@ -741,6 +781,7 @@ async function sendMessage(isRegenerate, regenText) {
             div.textContent = '⚠ Connection error.';
         }
     } finally {
+        finalizeThinking();
         div.classList.remove('typing-cursor');
         if (bubbleWrap && assistantId) {
             bubbleWrap.dataset.msgId = assistantId;

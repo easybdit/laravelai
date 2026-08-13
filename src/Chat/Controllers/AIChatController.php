@@ -530,9 +530,17 @@ class AIChatController extends Controller
                     ->timeout(300)
                     ->stream(
                         $history,
-                        function (string $chunk) use (&$fullReply) {
-                            $fullReply .= $chunk;
-                            echo "data: " . json_encode(['text' => $chunk]) . "\n\n";
+                        function (string $chunk, string $type = 'content') use (&$fullReply) {
+                            // "thinking" chunks (reasoning models) are never
+                            // added to the persisted/returned reply — only
+                            // relayed live so the UI can show something is
+                            // happening instead of a silent gap.
+                            if ($type === 'thinking') {
+                                echo "data: " . json_encode(['thinking' => $chunk]) . "\n\n";
+                            } else {
+                                $fullReply .= $chunk;
+                                echo "data: " . json_encode(['text' => $chunk]) . "\n\n";
+                            }
                             if (ob_get_level() > 0) { ob_flush(); }
                             flush();
                         }

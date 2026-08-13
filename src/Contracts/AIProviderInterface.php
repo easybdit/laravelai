@@ -28,6 +28,13 @@ interface AIProviderInterface
 
     public function options(array $options): static;
 
+    /**
+     * Toggle reasoning/"thinking" mode on models that support it (currently
+     * Ollama only — e.g. qwen3). Silently ignored by drivers that don't
+     * support it, same as format()/keepAlive() on non-Ollama drivers.
+     */
+    public function think(bool $think): static;
+
     public function embed(string|array $input): array;
 
     public function getProviderName(): string;

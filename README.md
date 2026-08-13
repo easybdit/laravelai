@@ -444,6 +444,17 @@ AI_OLLAMA_TIMEOUT=120
 > ```
 > Then use `AI_OLLAMA_MODEL=qwen2-fixed` in `.env`.
 
+**Reasoning models (qwen3 and similar) "think" before answering** — often adding 10–30+ seconds of latency for a simple question, with *nothing* visible while it happens. The built-in chat UI shows this live as a collapsible "🧠 Thinking… Ns" block instead of dead air, auto-collapsing to "Thought for Ns" once the real answer starts. If you'd rather skip the wait entirely:
+
+```env
+AI_OLLAMA_THINK=false
+```
+
+```php
+// or per-call
+AI::provider('ollama')->think(false)->chat($messages);
+```
+
 ### OpenAI (ChatGPT)
 
 ```env
@@ -622,6 +633,7 @@ try {
 | `->embed($text)` | Generate embedding |
 | `->keepAlive($duration)` | Keep in memory |
 | `->options($array)` | Raw Ollama options (e.g. `num_ctx`) |
+| `->think($bool)` | Toggle reasoning mode on models that support it (qwen3, etc.) |
 | `->pullModel($name)` | Download model |
 | `->showModel($name)` | Model details |
 | `->deleteModel($name)` | Remove model |
@@ -685,6 +697,7 @@ AI_PROVIDER=ollama
 AI_OLLAMA_URL=http://127.0.0.1:11434
 AI_OLLAMA_MODEL=qwen2:1.5b
 AI_OLLAMA_TIMEOUT=120
+# AI_OLLAMA_THINK=false   # skip reasoning-model "thinking" latency (qwen3, etc.)
 
 # OpenAI
 AI_OPENAI_KEY=sk-proj-xxxx
