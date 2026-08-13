@@ -105,18 +105,25 @@ jobs:
         db: [mysql, pgsql]
 
     services:
-      # A dedicated user, not root+empty-password: found live that
-      # MYSQL_ALLOW_EMPTY_PASSWORD's root grant is scoped to 'root'@'localhost'
-      # only, but the job container connects to this service container over
-      # the Docker bridge network — from an IP like 172.18.0.1, not
-      # localhost — so root@<bridge-ip> is a genuinely different, ungranted
-      # combination and every connection attempt was rejected with "Access
-      # denied for user 'root'@'172.18.0.1'". MYSQL_USER/MYSQL_PASSWORD are
-      # granted '@%' (any host) by the official image, which is what a
-      # cross-container service connection actually needs.
+      # A dedicated user, not root: found live that MYSQL_ALLOW_EMPTY_PASSWORD's
+      # root grant is scoped to 'root'@'localhost' only, but the job
+      # container connects to this service container over the Docker
+      # bridge network — from an IP like 172.18.0.1, not localhost — so
+      # root@<bridge-ip> is a genuinely different, ungranted combination
+      # and every connection attempt was rejected with "Access denied for
+      # user 'root'@'172.18.0.1'". MYSQL_USER/MYSQL_PASSWORD are granted
+      # '@%' (any host) by the official image, which is what a
+      # cross-container connection actually needs. MYSQL_ALLOW_EMPTY_PASSWORD
+      # still has to stay, though, for an unrelated reason: the image's own
+      # entrypoint refuses to start at all — "Initialize containers" failing
+      # outright, before any connection is even attempted — unless at least
+      # one of MYSQL_ROOT_PASSWORD/MYSQL_ALLOW_EMPTY_PASSWORD/
+      # MYSQL_RANDOM_ROOT_PASSWORD is set, found live the hard way by
+      # removing it in an earlier attempt at this exact fix.
       mysql:
         image: mysql:8.0
         env:
+          MYSQL_ALLOW_EMPTY_PASSWORD: yes
           MYSQL_USER: laravelai
           MYSQL_PASSWORD: laravelai
           MYSQL_DATABASE: laravelai_test
