@@ -1,5 +1,5 @@
 {
-    "name": "easybdit/laraveleasyai",
+    "name": "easybdit/laravelai",
     "version": "2.1.1",
     "description": "Unified AI chat for Laravel — Ollama, OpenAI, Anthropic (Claude), DeepSeek. One interface, any AI.",
     "keywords": [
