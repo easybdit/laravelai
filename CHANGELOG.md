@@ -1,6 +1,6 @@
 # Changelog
 
-## v2.0.0 — 2026-08-13
+## v2.1.0 — 2026-08-13
 
 ### 📤 Multi-format conversation export (PDF, Word, Excel, PowerPoint)
 
@@ -57,6 +57,10 @@ Reasoning models (qwen3 and similar) stream a separate `thinking` field ahead of
 - `OllamaDriver::stream()` now forwards `thinking` chunks distinctly from `content` chunks (2nd callback argument) — the built-in chat UI renders them live as a collapsible **"🧠 Thinking… Ns"** block that auto-collapses to "Thought for Ns" once the real answer starts, instead of a silent gap.
 - New `->think(bool)` builder method + `AI_OLLAMA_THINK` config to skip reasoning mode entirely when you'd rather have a faster, non-reasoning response.
 - Callback compatibility is arity-checked via reflection: a single-parameter callback (the documented `stream()` pattern used before this release) never receives `thinking` chunks at all, rather than silently having reasoning text merged into its content — verified by a regression test.
+
+---
+
+## v2.0.0 — 2026-08-13
 
 ### 🔒 Security & Trust Suite
 
