@@ -35,6 +35,11 @@ return [
             'version' => env('AI_ANTHROPIC_VERSION', '2023-06-01'),
             'timeout' => (int) env('AI_ANTHROPIC_TIMEOUT', 60),
             'vision'  => true,
+            // Extended thinking — off unless explicitly enabled (adds cost
+            // and latency by design). budget_tokens must stay below max_tokens;
+            // the driver bumps max_tokens automatically when needed.
+            'think'              => filter_var(env('AI_ANTHROPIC_THINK'), FILTER_VALIDATE_BOOL, FILTER_NULL_ON_FAILURE),
+            'think_budget_tokens' => (int) env('AI_ANTHROPIC_THINK_BUDGET', 10000),
             'options' => ['max_tokens' => 2000],
         ],
         'deepseek' => [
@@ -53,6 +58,9 @@ return [
             'model'   => env('AI_GEMINI_MODEL', 'gemini-2.0-flash'),
             'timeout' => (int) env('AI_GEMINI_TIMEOUT', 60),
             'vision'  => true,
+            // null = model's own default; true/false explicitly requests
+            // (or suppresses) visible reasoning parts for 2.5-series models.
+            'think'   => filter_var(env('AI_GEMINI_THINK'), FILTER_VALIDATE_BOOL, FILTER_NULL_ON_FAILURE),
             'options' => ['temperature' => 0.7, 'max_tokens' => 2000],
         ],
         'together' => [

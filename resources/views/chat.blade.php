@@ -236,12 +236,51 @@
         .welcome-box h2 { font-size: 1.15rem; margin-bottom: 6px; color: var(--text); }
         .welcome-box p  { font-size: 0.85rem; color: var(--text-muted); }
         .welcome-custom-msg { background: var(--bot-bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 16px; font-size: 0.87rem; text-align: left; margin-top: 14px; }
+
+        /* ── MOBILE TOPBAR & SIDEBAR DRAWER ── */
+        .mobile-topbar { display: none; align-items: center; gap: 10px; padding: 12px 14px; background: var(--surface); border-bottom: 1px solid var(--border); }
+        .hamburger-btn { background: none; border: none; font-size: 1.15rem; line-height: 1; padding: 6px 8px; border-radius: 8px; cursor: pointer; color: var(--text); flex-shrink: 0; }
+        .hamburger-btn:hover { background: var(--bg); }
+        .mobile-topbar-title { font-size: 0.9rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+        .sidebar-backdrop { display: none; position: fixed; inset: 0; background: rgba(15,17,23,0.5); z-index: 150; }
+        .sidebar-backdrop.open { display: block; }
+
+        @media (max-width: 768px) {
+            .mobile-topbar { display: flex; }
+            .sidebar {
+                position: fixed; inset: 0 auto 0 0; z-index: 200; width: min(82vw, 300px);
+                transform: translateX(-100%); transition: transform 0.22s ease; box-shadow: 0 0 40px rgba(0,0,0,0.35);
+            }
+            .sidebar.open { transform: translateX(0); }
+            .chat-header { flex-wrap: wrap; row-gap: 8px; padding: 10px 14px; }
+            .chat-header .header-icon, .chat-header .header-title,
+            .chat-header .header-project-tag, .chat-header .rag-badge { display: none; }
+            .chat-header .header-meta { margin-left: 0; width: 100%; justify-content: flex-end; overflow-x: auto; }
+            .msg-row { padding: 8px 14px; max-width: none; }
+            .input-area { padding: 10px 14px 14px; }
+            .messages { padding: 14px 0; }
+            /* Touch targets grow slightly — mouse-sized 30px buttons are
+               under the ~40-44px minimum comfortable tap size. */
+            .input-icon-btn { width: 38px; height: 40px; font-size: 1.05rem; }
+            .send-btn { width: 42px; height: 42px; }
+            .icon-btn { width: 34px; height: 34px; }
+            .modal-overlay { padding: 0; }
+            .modal { width: 100vw; max-width: 100vw; height: 100vh; max-height: 100vh; border-radius: 0; }
+            .modal-body { flex: 1; }
+        }
+
+        @media (max-width: 420px) {
+            .welcome-caps { gap: 6px; }
+            .cap-chip, .bubble-actions .icon-action { font-size: 0.7rem; }
+        }
     </style>
 </head>
 <body>
 
+<div class="sidebar-backdrop" id="sidebarBackdrop" onclick="closeSidebar()"></div>
+
 {{-- ── SIDEBAR ── --}}
-<aside class="sidebar">
+<aside class="sidebar" id="sidebar">
     <div class="sidebar-top">
         <div class="app-brand">
             <div class="brand-icon">🤖</div>
@@ -322,6 +361,10 @@
 
 {{-- ── MAIN ── --}}
 <main class="main">
+    <div class="mobile-topbar">
+        <button class="hamburger-btn" onclick="toggleSidebar()" aria-label="Open menu">☰</button>
+        <span class="mobile-topbar-title">{{ $activeSession->title ?? ($ui['title'] ?? 'AI Chat') }}</span>
+    </div>
     @if($activeSession)
         <div class="chat-header">
             <div class="header-icon {{ $activeSession->project_id ? 'project-header-icon' : '' }}">
@@ -941,6 +984,22 @@ document.addEventListener('keydown', e => {
     if (e.key === 'Escape' && document.body.classList.contains('chat-fullscreen')) {
         document.body.classList.remove('chat-fullscreen');
     }
+});
+
+// ── MOBILE SIDEBAR DRAWER ──
+function openSidebar() {
+    document.getElementById('sidebar')?.classList.add('open');
+    document.getElementById('sidebarBackdrop')?.classList.add('open');
+}
+function closeSidebar() {
+    document.getElementById('sidebar')?.classList.remove('open');
+    document.getElementById('sidebarBackdrop')?.classList.remove('open');
+}
+function toggleSidebar() {
+    document.getElementById('sidebar')?.classList.contains('open') ? closeSidebar() : openSidebar();
+}
+document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') closeSidebar();
 });
 
 // ── EXPORT ──

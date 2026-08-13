@@ -2,6 +2,24 @@
 
 ## v2.0.0 — 2026-08-13
 
+### 📱 Responsive chat UI
+
+The built-in chat UI was desktop-only — a fixed 260px sidebar with no mobile breakpoints, genuinely broken on a phone. Now:
+
+- Sidebar becomes an off-canvas drawer below 768px (hamburger toggle + backdrop, `Escape` or backdrop-tap to close) instead of squeezing/overflowing the page.
+- Modals go full-screen on small viewports instead of a cramped fixed-width box.
+- Touch-sized tap targets (inputs/send/icon buttons grow to a comfortable size) below 768px; message padding and header layout adapt down to phone widths.
+
+### 🧠 Multi-provider "thinking" visibility
+
+Extends Ollama's live thinking display (see below) to the other two providers with real reasoning APIs:
+
+- **Anthropic** — extended thinking via `thinking: {type: "enabled", budget_tokens: N}`; `->think(true)` / `AI_ANTHROPIC_THINK=true`. `max_tokens` is bumped automatically to stay above `budget_tokens`, and a custom `temperature` is dropped while thinking is enabled (the API rejects both otherwise).
+- **Gemini** — `generationConfig.thinkingConfig.includeThoughts`; `->think(true)` / `AI_GEMINI_THINK=true`. Reasoning parts arrive flagged `thought:true` in the same `parts` array as the answer and are routed out of both the streamed chunks and the non-streaming response content.
+- **OpenAI** — not supported: its Chat Completions API (what this package uses for OpenAI) doesn't expose reasoning content for o-series models at all, by design. Would need a separate Responses API driver to ever show anything here.
+
+Same "thinking" vs "content" chunk-type contract and reflection-based callback-arity safety as Ollama's implementation, verified with 6 new tests.
+
 ### 🧠 Reasoning-model ("thinking") visibility
 
 Reasoning models (qwen3 and similar) stream a separate `thinking` field ahead of the real answer — often 10–30+ seconds of nothing visible at all, which reads as a hung request. Found live against a real Ollama deployment: a plain "hello" took 40 seconds end-to-end, ~22 of it silent.

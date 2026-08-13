@@ -24,20 +24,32 @@ class AnthropicDriver extends AbstractDriver
         $url       = rtrim($this->config['url'], '/') . '/messages';
         $isStream  = $this->streamCallback !== null;
 
+        $maxTokens = $this->getMaxTokens() ?? 2000;
+
         $body = [
-            'model'      => $this->currentModel,
-            'messages'   => $formatted['messages'],
-            'max_tokens' => $this->getMaxTokens() ?? 2000,
-            'stream'     => $isStream,
+            'model'    => $this->currentModel,
+            'messages' => $formatted['messages'],
+            'stream'   => $isStream,
         ];
 
         if ($formatted['system']) {
             $body['system'] = $formatted['system'];
         }
 
-        if ($this->currentTemp !== null) {
+        // Extended thinking. Anthropic requires max_tokens to exceed
+        // budget_tokens, and rejects a custom temperature while thinking is
+        // enabled (must be left at the API default) — both handled here so
+        // ->think(true) alone is enough, no extra tuning required.
+        $think = $this->currentThink ?? ($this->config['think'] ?? null);
+        if ($think) {
+            $budgetTokens = (int) ($this->config['think_budget_tokens'] ?? 10000);
+            $maxTokens    = max($maxTokens, $budgetTokens + 1024);
+            $body['thinking'] = ['type' => 'enabled', 'budget_tokens' => $budgetTokens];
+        } elseif ($this->currentTemp !== null) {
             $body['temperature'] = $this->getTemperature();
         }
+
+        $body['max_tokens'] = $maxTokens;
 
         $this->log('Request', ['model' => $this->currentModel, 'messages_count' => count($formatted['messages'])]);
 
@@ -120,7 +132,15 @@ class AnthropicDriver extends AbstractDriver
         $stream = $response->toPsrResponse()->getBody();
         $buffer = '';
 
-        $handleLine = function (string $line) use ($callback, &$fullContent, &$inputTokens, &$outputTokens) {
+        // Extended thinking streams a separate thinking_delta ahead of the
+        // real text_delta. Forwarded as a distinctly-tagged chunk (2nd
+        // callback arg), gated by reflection the same way as Ollama's
+        // thinking support — a legacy single-parameter callback never
+        // receives it, rather than silently getting reasoning text merged
+        // into its content.
+        $callbackAcceptsType = (new \ReflectionFunction(\Closure::fromCallable($callback)))->getNumberOfParameters() > 1;
+
+        $handleLine = function (string $line) use ($callback, $callbackAcceptsType, &$fullContent, &$inputTokens, &$outputTokens) {
             $line = trim($line);
             if (!str_starts_with($line, 'data: ')) {
                 return;
@@ -133,10 +153,19 @@ class AnthropicDriver extends AbstractDriver
             $type = $json['type'] ?? '';
 
             if ($type === 'content_block_delta') {
-                $chunk = $json['delta']['text'] ?? '';
-                if ($chunk !== '') {
-                    $fullContent .= $chunk;
-                    $callback($chunk);
+                $deltaType = $json['delta']['type'] ?? '';
+
+                if ($deltaType === 'thinking_delta') {
+                    $thinkChunk = $json['delta']['thinking'] ?? '';
+                    if ($thinkChunk !== '' && $callbackAcceptsType) {
+                        $callback($thinkChunk, 'thinking');
+                    }
+                } else {
+                    $chunk = $json['delta']['text'] ?? '';
+                    if ($chunk !== '') {
+                        $fullContent .= $chunk;
+                        $callbackAcceptsType ? $callback($chunk, 'content') : $callback($chunk);
+                    }
                 }
             }
             if ($type === 'message_delta') {

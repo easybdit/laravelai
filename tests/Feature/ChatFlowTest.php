@@ -23,6 +23,19 @@ class ChatFlowTest extends TestCase
         $this->get('/ai-chat')->assertOk();
     }
 
+    public function test_index_renders_with_an_active_session_and_messages(): void
+    {
+        $session = ChatSession::create(['title' => 'Renders fine']);
+        ChatMessage::create(['chat_session_id' => $session->id, 'role' => 'user', 'content' => 'Hi']);
+        ChatMessage::create(['chat_session_id' => $session->id, 'role' => 'assistant', 'content' => 'Hello!']);
+
+        $response = $this->get('/ai-chat?session=' . $session->id);
+
+        $response->assertOk();
+        $response->assertSee('Renders fine');
+        $response->assertSee('Hello!', false);
+    }
+
     public function test_new_session_creates_a_guest_scoped_session(): void
     {
         $response = $this->postJson('/ai-chat/api/sessions', []);

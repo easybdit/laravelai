@@ -175,6 +175,8 @@ php artisan tinker
 | 📎 Attachments | Vision + document uploads mid-chat (v2.0.0) |
 | 🧩 Floating widget | `<x-laravelai::widget />` — embeddable anywhere (v2.0.0) |
 | 📊 Analytics | Usage dashboard, zero external tracking (v2.0.0) |
+| 📱 Responsive | Off-canvas sidebar drawer, full-screen modals, and touch-sized controls below 768px |
+| 🧠 Live thinking | Collapsible "Thinking…" block for reasoning models (Ollama qwen3, Anthropic extended thinking, Gemini 2.5) instead of dead air |
 
 ### Customize the view
 
@@ -444,7 +446,7 @@ AI_OLLAMA_TIMEOUT=120
 > ```
 > Then use `AI_OLLAMA_MODEL=qwen2-fixed` in `.env`.
 
-**Reasoning models (qwen3 and similar) "think" before answering** — often adding 10–30+ seconds of latency for a simple question, with *nothing* visible while it happens. The built-in chat UI shows this live as a collapsible "🧠 Thinking… Ns" block instead of dead air, auto-collapsing to "Thought for Ns" once the real answer starts. If you'd rather skip the wait entirely:
+**Reasoning models (qwen3 and similar) "think" before answering** — often adding 10–30+ seconds of latency for a simple question, with *nothing* visible while it happens. The built-in chat UI shows this live as a collapsible "🧠 Thinking… Ns" block instead of dead air, auto-collapsing to "Thought for Ns" once the real answer starts — same idea as Claude.ai's/ChatGPT's extended-thinking UI. Supported on Ollama, Anthropic, and Gemini (see their sections below); OpenAI's o-series reasoning models don't expose visible reasoning through the Chat Completions API this package uses, so there's nothing to show for OpenAI. If you'd rather skip the wait entirely on Ollama:
 
 ```env
 AI_OLLAMA_THINK=false
@@ -469,6 +471,13 @@ AI_ANTHROPIC_KEY=sk-ant-your-api-key
 AI_ANTHROPIC_MODEL=claude-sonnet-4-20250514
 ```
 
+Extended thinking is off by default (it costs extra tokens and time). Turn it on and the chat UI shows the same live "🧠 Thinking…" block as Ollama:
+
+```env
+AI_ANTHROPIC_THINK=true
+AI_ANTHROPIC_THINK_BUDGET=10000
+```
+
 ### DeepSeek
 
 ```env
@@ -481,6 +490,12 @@ AI_DEEPSEEK_MODEL=deepseek-chat
 ```env
 AI_GEMINI_KEY=your-api-key
 AI_GEMINI_MODEL=gemini-2.0-flash
+```
+
+2.5-series models support the same live thinking display:
+
+```env
+AI_GEMINI_THINK=true
 ```
 
 ### Together AI

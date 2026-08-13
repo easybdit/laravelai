@@ -66,6 +66,15 @@ class GeminiDriver extends AbstractDriver
         if ($maxTokens = $this->getMaxTokens()) {
             $generationConfig['maxOutputTokens'] = $maxTokens;
         }
+
+        // Thinking mode — reasoning parts come back flagged thought:true in
+        // the same parts array as the final answer, rather than a separate
+        // field like Ollama/Anthropic.
+        $think = $this->currentThink ?? ($this->config['think'] ?? null);
+        if ($think !== null) {
+            $generationConfig['thinkingConfig'] = ['includeThoughts' => $think];
+        }
+
         if ($generationConfig) {
             $body['generationConfig'] = $generationConfig;
         }
@@ -106,7 +115,9 @@ class GeminiDriver extends AbstractDriver
             $data = $response->json();
             $content = '';
             foreach ($data['candidates'][0]['content']['parts'] ?? [] as $part) {
-                $content .= $part['text'] ?? '';
+                if (empty($part['thought'])) {
+                    $content .= $part['text'] ?? '';
+                }
             }
 
             $result = new AIResponse(
@@ -150,7 +161,14 @@ class GeminiDriver extends AbstractDriver
         $stream = $response->toPsrResponse()->getBody();
         $buffer = '';
 
-        $handleLine = function (string $line) use ($callback, &$fullContent) {
+        // Thinking mode flags reasoning parts with "thought": true in the
+        // same parts array as the real answer, rather than a separate
+        // field — each part is routed individually and, like Ollama/
+        // Anthropic, gated by callback arity so a legacy single-parameter
+        // callback never receives thinking text at all.
+        $callbackAcceptsType = (new \ReflectionFunction(\Closure::fromCallable($callback)))->getNumberOfParameters() > 1;
+
+        $handleLine = function (string $line) use ($callback, $callbackAcceptsType, &$fullContent) {
             $line = trim($line);
             if (!str_starts_with($line, 'data: ')) {
                 return;
@@ -159,13 +177,19 @@ class GeminiDriver extends AbstractDriver
             if (!$json) {
                 return;
             }
-            $chunk = '';
             foreach ($json['candidates'][0]['content']['parts'] ?? [] as $part) {
-                $chunk .= $part['text'] ?? '';
-            }
-            if ($chunk !== '') {
-                $fullContent .= $chunk;
-                $callback($chunk);
+                $text = $part['text'] ?? '';
+                if ($text === '') {
+                    continue;
+                }
+                if (!empty($part['thought'])) {
+                    if ($callbackAcceptsType) {
+                        $callback($text, 'thinking');
+                    }
+                    continue;
+                }
+                $fullContent .= $text;
+                $callbackAcceptsType ? $callback($text, 'content') : $callback($text);
             }
         };
 
