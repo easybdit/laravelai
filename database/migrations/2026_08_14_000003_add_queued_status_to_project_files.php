@@ -27,15 +27,22 @@ use Illuminate\Support\Facades\Schema;
  *    this migration fails with "CHECK constraint failed: status"). SQLite
  *    has no ALTER COLUMN, so the constraint can only change via Laravel's
  *    ->change(), which rebuilds the table — natively since Laravel 11, no
- *    doctrine/dbal required (this package doesn't depend on dbal).
- *  - Postgres: `varchar(255) check (status in (...))` — same story as
- *    SQLite, handled the same way via ->change().
- * Both non-MySQL branches are wrapped in try/catch: on an older
- * Laravel/DBAL combination that can't rebuild the table here, this
- * degrades to a no-op rather than breaking the migration — 'queued' would
- * then only be rejected by that specific old install's DB layer, not by
- * anything in this package (ProjectFile::status is a plain string
- * attribute, not a PHP-level enum).
+ *    doctrine/dbal required (this package doesn't depend on dbal). Real
+ *    local SQLite runs confirm this path works.
+ *  - Postgres: also `varchar(255) check ("status" in (...))` (see
+ *    PostgresGrammar::typeEnum()) — but unlike SQLite, ->change() here
+ *    was found live (real GitHub Actions Postgres service container, not
+ *    a guess) to silently fail to actually widen the constraint: a
+ *    dedicated regression test asserting a 'queued' status row can be
+ *    created got a 500 (constraint violation) instead of 201, meaning
+ *    the try/catch below WAS silently swallowing a real failure on this
+ *    driver specifically, exactly the risk the class docblock warned
+ *    about, now confirmed rather than theoretical. Fixed with direct
+ *    DROP/ADD CONSTRAINT raw SQL instead of relying on ->change() for
+ *    Postgres: an inline column-level CHECK constraint with no explicit
+ *    name (what typeEnum() above generates) gets Postgres's own default
+ *    auto-generated name, "{table}_{column}_check" — a stable, documented
+ *    Postgres convention, not a Laravel implementation detail.
  */
 return new class extends Migration
 {
@@ -52,22 +59,7 @@ return new class extends Migration
             return;
         }
 
-        $driver = DB::getDriverName();
-
-        if ($driver === 'mysql') {
-            DB::statement("ALTER TABLE {$table} MODIFY status ENUM('pending','ingested','queued','failed') NOT NULL DEFAULT 'pending'");
-            return;
-        }
-
-        if ($driver === 'sqlite' || $driver === 'pgsql') {
-            try {
-                Schema::table($table, function (Blueprint $t) {
-                    $t->enum('status', ['pending', 'ingested', 'queued', 'failed'])->default('pending')->change();
-                });
-            } catch (\Throwable $e) {
-                // See class docblock — soft degrade, not a hard migration failure.
-            }
-        }
+        $this->setStatusCheck($table, ['pending', 'ingested', 'queued', 'failed'], 'pending');
     }
 
     public function down(): void
@@ -77,20 +69,38 @@ return new class extends Migration
             return;
         }
 
+        $this->setStatusCheck($table, ['pending', 'ingested', 'failed'], 'pending');
+    }
+
+    private function setStatusCheck(string $table, array $values, string $default): void
+    {
         $driver = DB::getDriverName();
+        $list   = "'" . implode("','", $values) . "'";
 
         if ($driver === 'mysql') {
-            DB::statement("ALTER TABLE {$table} MODIFY status ENUM('pending','ingested','failed') NOT NULL DEFAULT 'pending'");
+            DB::statement("ALTER TABLE {$table} MODIFY status ENUM({$list}) NOT NULL DEFAULT '{$default}'");
             return;
         }
 
-        if ($driver === 'sqlite' || $driver === 'pgsql') {
+        if ($driver === 'pgsql') {
+            $constraint = "{$table}_status_check";
+            DB::statement("ALTER TABLE {$table} DROP CONSTRAINT IF EXISTS {$constraint}");
+            DB::statement("ALTER TABLE {$table} ADD CONSTRAINT {$constraint} CHECK (status IN ({$list}))");
+            return;
+        }
+
+        if ($driver === 'sqlite') {
             try {
-                Schema::table($table, function (Blueprint $t) {
-                    $t->enum('status', ['pending', 'ingested', 'failed'])->default('pending')->change();
+                Schema::table($table, function (Blueprint $t) use ($values, $default) {
+                    $t->enum('status', $values)->default($default)->change();
                 });
             } catch (\Throwable $e) {
-                // See class docblock — soft degrade, not a hard migration failure.
+                // Genuinely no other portable path on an old SQLite/Laravel
+                // combination that can't rebuild the table — degrades to a
+                // no-op rather than breaking the migration; 'queued' would
+                // then only be rejected by that specific install's DB
+                // layer, not by anything in this package (ProjectFile's
+                // status is a plain string attribute, not a PHP-level enum).
             }
         }
     }

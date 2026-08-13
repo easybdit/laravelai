@@ -105,10 +105,20 @@ jobs:
         db: [mysql, pgsql]
 
     services:
+      # A dedicated user, not root+empty-password: found live that
+      # MYSQL_ALLOW_EMPTY_PASSWORD's root grant is scoped to 'root'@'localhost'
+      # only, but the job container connects to this service container over
+      # the Docker bridge network — from an IP like 172.18.0.1, not
+      # localhost — so root@<bridge-ip> is a genuinely different, ungranted
+      # combination and every connection attempt was rejected with "Access
+      # denied for user 'root'@'172.18.0.1'". MYSQL_USER/MYSQL_PASSWORD are
+      # granted '@%' (any host) by the official image, which is what a
+      # cross-container service connection actually needs.
       mysql:
         image: mysql:8.0
         env:
-          MYSQL_ALLOW_EMPTY_PASSWORD: yes
+          MYSQL_USER: laravelai
+          MYSQL_PASSWORD: laravelai
           MYSQL_DATABASE: laravelai_test
         ports:
           - 3306:3306
@@ -136,8 +146,8 @@ jobs:
       DB_HOST: 127.0.0.1
       DB_PORT: ${{ matrix.db == 'mysql' && '3306' || '5432' }}
       DB_DATABASE: laravelai_test
-      DB_USERNAME: ${{ matrix.db == 'mysql' && 'root' || 'postgres' }}
-      DB_PASSWORD: ${{ matrix.db == 'mysql' && '' || 'postgres' }}
+      DB_USERNAME: ${{ matrix.db == 'mysql' && 'laravelai' || 'postgres' }}
+      DB_PASSWORD: ${{ matrix.db == 'mysql' && 'laravelai' || 'postgres' }}
 
     steps:
       - uses: actions/checkout@v4
