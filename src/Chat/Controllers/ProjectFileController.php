@@ -4,6 +4,7 @@ namespace EasyAI\LaravelAI\Chat\Controllers;
 
 use EasyAI\LaravelAI\Chat\Models\Project;
 use EasyAI\LaravelAI\Chat\Models\ProjectFile;
+use EasyAI\LaravelAI\Chat\Support\TextExtractor;
 use EasyAI\LaravelAI\Facades\AI;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
@@ -78,30 +79,43 @@ class ProjectFileController extends Controller
         return response()->json(['ok' => true]);
     }
 
+    /**
+     * Re-chunk an already-uploaded file in place — useful after changing
+     * AI_RAG_CHUNK_SIZE / AI_RAG_EMBED_MODEL, without re-uploading anything.
+     */
+    public function reprocess(Request $request, $project, $file)
+    {
+        $proj = Project::findOrFail($project);
+        $pf   = ProjectFile::where('project_id', $proj->id)->findOrFail($file);
+        $source = 'project_' . $proj->id;
+
+        try {
+            $text = $this->extractText($pf);
+            if (empty(trim($text))) {
+                throw new \RuntimeException('File is empty or could not be read.');
+            }
+
+            // ai_documents has no per-file column — chunks are only scoped by
+            // project source — so reprocessing one file means re-ingesting the
+            // whole project's chunk set.
+            DB::table(config('ai.rag.table', 'ai_documents'))->where('source', $source)->delete();
+
+            foreach ($proj->files()->where('status', 'ingested')->where('id', '!=', $pf->id)->get() as $other) {
+                AI::rag()->ingest($this->extractText($other), $source);
+            }
+            AI::rag()->ingest($text, $source);
+
+            $pf->update(['status' => 'ingested']);
+        } catch (\Throwable $e) {
+            $pf->update(['status' => 'failed']);
+            return response()->json(['file' => $pf->fresh(), 'error' => $e->getMessage()], 422);
+        }
+
+        return response()->json($pf->fresh());
+    }
+
     private function extractText(ProjectFile $file): string
     {
-        $fullPath = Storage::disk('local')->path($file->stored_path);
-
-        if (!file_exists($fullPath)) {
-            throw new \RuntimeException("Stored file not found at: {$fullPath}");
-        }
-
-        if (str_contains($file->mime_type, 'pdf')) {
-            if (!class_exists(\Smalot\PdfParser\Parser::class)) {
-                throw new \RuntimeException(
-                    'PDF ingestion requires: composer require smalot/pdfparser'
-                );
-            }
-            $parser = new \Smalot\PdfParser\Parser();
-            return $parser->parseFile($fullPath)->getText();
-        }
-
-        $text = file_get_contents($fullPath);
-
-        if ($text === false) {
-            throw new \RuntimeException('Could not read file contents.');
-        }
-
-        return $text;
+        return TextExtractor::extract(Storage::disk('local')->path($file->stored_path), $file->mime_type);
     }
 }

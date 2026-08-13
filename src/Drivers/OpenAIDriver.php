@@ -20,6 +20,7 @@ class OpenAIDriver extends AbstractDriver
     {
         $messages = $this->prependSystemPrompt($messages);
         $formatted = MessageFormatter::normalize($messages, 'openai');
+        $formatted['messages'] = MessageFormatter::toProviderContent($formatted['messages'], 'openai');
         $url = rtrim($this->config['url'], '/') . '/chat/completions';
         $isStream = $this->streamCallback !== null;
 
@@ -117,6 +118,18 @@ class OpenAIDriver extends AbstractDriver
                     $fullContent .= $chunk;
                     $callback($chunk);
                 }
+            }
+        }
+
+        // A final "data: ..." line with no trailing newline (arrives in the
+        // same read() that hits EOF) would otherwise sit in $buffer unparsed.
+        $line = trim($buffer);
+        if (str_starts_with($line, 'data: ') && substr($line, 6) !== '[DONE]') {
+            $json = json_decode(substr($line, 6), true);
+            $chunk = $json['choices'][0]['delta']['content'] ?? '';
+            if ($chunk !== '') {
+                $fullContent .= $chunk;
+                $callback($chunk);
             }
         }
 

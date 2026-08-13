@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
-    <title>AI Chat — LaravelAI</title>
+    <title>{{ $ui['title'] ?? 'AI Chat' }} — LaravelAI</title>
     <link rel="stylesheet" href="{{ asset('vendor/laravelai/css/github-dark.min.css') }}">
     <script src="{{ asset('vendor/laravelai/js/marked.min.js') }}"></script>
     <script src="{{ asset('vendor/laravelai/js/highlight.min.js') }}"></script>
@@ -16,8 +16,8 @@
             --sidebar-text:   #8b95a8;
             --sidebar-hover:  #161c2d;
             --sidebar-active: #1a2035;
-            --accent:         #6366f1;
-            --accent-hover:   #4f46e5;
+            --accent:         {{ $ui['color_accent'] ?? '#6366f1' }};
+            --accent-hover:   {{ $ui['color_accent'] ?? '#4f46e5' }};
             --surface:        #ffffff;
             --bg:             #f5f6fa;
             --border:         #e8eaef;
@@ -26,6 +26,8 @@
             --radius:         12px;
             --shadow:         0 1px 3px rgba(0,0,0,0.07), 0 4px 12px rgba(0,0,0,0.04);
             --project-color:  #10b981;
+            --user-bg:        {{ $ui['color_user_bg'] ?? '#1a56db' }};
+            --bot-bg:         {{ $ui['color_bot_bg'] ?? '#f3f4f6' }};
         }
         body { font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; background: var(--bg); height: 100vh; display: flex; overflow: hidden; color: var(--text); }
         ::-webkit-scrollbar { width: 4px; }
@@ -47,6 +49,11 @@
         @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
         .new-chat-btn { width: 100%; padding: 9px 14px; background: var(--accent); color: white; border: none; border-radius: 8px; font-size: 0.85rem; font-weight: 500; cursor: pointer; font-family: inherit; display: flex; align-items: center; gap: 8px; transition: background 0.15s; }
         .new-chat-btn:hover { background: var(--accent-hover); }
+        .search-box { position: relative; margin-bottom: 4px; }
+        .search-box input { width: 100%; background: #161c2d; border: 1px solid var(--sidebar-border); color: #c8d0de; padding: 7px 10px 7px 28px; border-radius: 8px; font-size: 0.8rem; font-family: inherit; outline: none; }
+        .search-box input:focus { border-color: var(--accent); }
+        .search-box::before { content: '🔍'; position: absolute; left: 9px; top: 50%; transform: translateY(-50%); font-size: 0.7rem; opacity: 0.5; }
+        .session-item.search-hidden { display: none; }
 
         /* ── SIDEBAR SECTIONS ── */
         .sidebar-body { flex: 1; overflow-y: auto; }
@@ -78,33 +85,46 @@
         .session-item:hover .delete-btn { color: #3d4659; }
         .delete-btn:hover { background: #ef4444 !important; color: white !important; }
 
-        .sidebar-footer { padding: 12px 14px; border-top: 1px solid var(--sidebar-border); font-size: 0.7rem; color: #2d3548; }
+        .sidebar-footer { padding: 12px 14px; border-top: 1px solid var(--sidebar-border); font-size: 0.7rem; color: #2d3548; display: flex; justify-content: space-between; align-items: center; }
         .sidebar-footer a { color: #4a5568; text-decoration: none; }
         .sidebar-footer a:hover { color: var(--accent); }
 
         /* ── MAIN ── */
         .main { flex: 1; display: flex; flex-direction: column; height: 100vh; overflow: hidden; }
+        body.chat-fullscreen .sidebar { display: none; }
+        body.chat-fullscreen .main { position: fixed; inset: 0; z-index: 999; }
         .chat-header { padding: 13px 22px; background: var(--surface); border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; box-shadow: var(--shadow); z-index: 10; }
-        .header-icon { width: 28px; height: 28px; background: linear-gradient(135deg, #6366f1, #8b5cf6); border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 13px; flex-shrink: 0; }
+        .header-icon { width: 28px; height: 28px; background: linear-gradient(135deg, #6366f1, #8b5cf6); border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 13px; flex-shrink: 0; overflow: hidden; }
+        .header-icon img { width: 100%; height: 100%; object-fit: cover; }
         .header-icon.project-header-icon { background: linear-gradient(135deg, #059669, #10b981); }
         .header-title { font-size: 0.9rem; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
         .header-project-tag { font-size: 0.7rem; color: var(--project-color); background: #ecfdf5; border: 1px solid #a7f3d0; padding: 2px 8px; border-radius: 10px; flex-shrink: 0; }
-        .header-meta { margin-left: auto; display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+        .header-meta { margin-left: auto; display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
         .header-provider { font-size: 0.72rem; color: var(--text-muted); background: var(--bg); border: 1px solid var(--border); padding: 4px 10px; border-radius: 20px; }
         .manage-files-btn { font-size: 0.75rem; color: var(--project-color); background: #ecfdf5; border: 1px solid #a7f3d0; padding: 4px 10px; border-radius: 20px; cursor: pointer; transition: all 0.15s; }
         .manage-files-btn:hover { background: #d1fae5; }
+        .icon-btn { background: var(--bg); border: 1px solid var(--border); color: var(--text-muted); width: 30px; height: 30px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 0.85rem; transition: all 0.15s; flex-shrink: 0; }
+        .icon-btn:hover { background: #e8eaef; color: var(--text); }
+        .icon-btn.active { background: var(--accent-soft, #eeecfb); color: var(--accent); border-color: var(--accent); }
 
         /* ── MESSAGES ── */
         .messages { flex: 1; overflow-y: auto; padding: 24px 0; }
         .msg-row { display: flex; gap: 12px; padding: 10px 24px; max-width: 900px; margin: 0 auto; width: 100%; }
-        .avatar { width: 30px; height: 30px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 0.65rem; font-weight: 700; flex-shrink: 0; }
-        .avatar.user      { background: var(--accent); color: white; }
+        .avatar { width: 30px; height: 30px; border-radius: 8px; display: flex; align-items: center; justify-content: center; font-size: 0.65rem; font-weight: 700; flex-shrink: 0; overflow: hidden; }
+        .avatar.user      { background: var(--user-bg); color: white; }
         .avatar.assistant { background: linear-gradient(135deg, #0ea5e9, #6366f1); color: white; }
+        .avatar img { width: 100%; height: 100%; object-fit: cover; }
         .bubble-wrap { flex: 1; min-width: 0; }
+        .msg-meta { display: flex; align-items: baseline; gap: 8px; margin-bottom: 3px; }
+        .msg-label { font-size: 0.72rem; font-weight: 600; color: var(--text-muted); }
+        .msg-time { font-size: 0.68rem; color: var(--text-muted); opacity: 0.75; font-variant-numeric: tabular-nums; }
         .bubble { padding: 12px 16px; border-radius: var(--radius); font-size: 0.88rem; line-height: 1.6; }
-        .bubble.user      { background: var(--surface); border: 1px solid var(--border); box-shadow: var(--shadow); color: var(--text); white-space: pre-wrap; }
+        .bubble.user      { background: var(--bot-bg); border: 1px solid var(--border); box-shadow: var(--shadow); color: var(--text); white-space: pre-wrap; }
         .bubble.assistant { background: transparent; color: var(--text); }
-        .bubble-actions { display: flex; gap: 6px; margin-top: 4px; padding-left: 2px; }
+        .bubble-actions { display: flex; gap: 4px; margin-top: 5px; padding-left: 2px; flex-wrap: wrap; align-items: center; }
+        .icon-action { font-size: 0.72rem; color: var(--text-muted); background: none; border: 1px solid var(--border); padding: 3px 8px; border-radius: 6px; cursor: pointer; transition: all 0.15s; line-height: 1.2; }
+        .icon-action:hover { background: var(--bg); color: var(--text); }
+        .icon-action.rated { background: var(--accent-soft, #eeecfb); color: var(--accent); border-color: var(--accent); }
         .copy-btn { font-size: 0.7rem; color: var(--text-muted); background: none; border: 1px solid var(--border); padding: 2px 8px; border-radius: 4px; cursor: pointer; transition: all 0.15s; }
         .copy-btn:hover { background: var(--bg); color: var(--text); }
         .md-body h1,.md-body h2,.md-body h3 { margin: 1em 0 0.4em; font-weight: 600; }
@@ -120,16 +140,40 @@
         .code-copy-btn:hover { background: #4b5563; color: white; }
         .typing-cursor::after { content: '▋'; animation: blink 1s infinite; color: var(--accent); }
         @keyframes blink { 0%,100%{opacity:1} 50%{opacity:0} }
+        .regen-row { max-width: 900px; margin: 4px auto 0; padding: 0 24px 6px; }
+        .regen-btn { font-size: 0.76rem; color: var(--text-muted); background: var(--surface); border: 1px solid var(--border); padding: 5px 12px; border-radius: 8px; cursor: pointer; }
+        .regen-btn:hover { background: var(--bg); color: var(--text); }
+
+        /* ── CAPTCHA / GDPR ── */
+        .gdpr-overlay { position: absolute; inset: 0; background: rgba(20,18,28,0.55); display: none; align-items: flex-end; justify-content: center; z-index: 50; }
+        .gdpr-overlay.open { display: flex; }
+        .gdpr-card { background: var(--surface); border-radius: 14px 14px 0 0; max-width: 640px; width: 100%; padding: 18px 22px; box-shadow: 0 -8px 30px rgba(0,0,0,0.15); display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+        .gdpr-card p { flex: 1; min-width: 220px; font-size: 0.83rem; color: var(--text-muted); }
+        .captcha-row { display: flex; align-items: center; gap: 8px; padding: 0 24px 8px; max-width: 900px; margin: 0 auto; width: 100%; }
+        .captcha-row.hidden { display: none; }
+        .captcha-row span { font-size: 0.8rem; color: var(--text-muted); }
+        .captcha-row input { width: 60px; padding: 5px 8px; border: 1px solid var(--border); border-radius: 6px; font-size: 0.82rem; font-family: inherit; }
+
+        /* ── ATTACHMENTS (chat input) ── */
+        .attach-chips { display: flex; gap: 6px; flex-wrap: wrap; padding: 0 2px 8px; }
+        .attach-chip { display: flex; align-items: center; gap: 5px; font-size: 0.74rem; background: var(--bg); border: 1px solid var(--border); padding: 3px 6px 3px 9px; border-radius: 20px; color: var(--text-muted); }
+        .attach-chip button { background: none; border: none; cursor: pointer; color: #9ca3af; font-size: 0.7rem; padding: 2px; }
+        .attach-chip button:hover { color: #dc2626; }
 
         /* ── INPUT ── */
-        .input-area { padding: 16px 24px 20px; background: var(--surface); border-top: 1px solid var(--border); }
-        .input-box { display: flex; gap: 10px; align-items: flex-end; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; transition: border-color 0.15s, box-shadow 0.15s; }
+        .input-area { padding: 10px 24px 20px; background: var(--surface); border-top: 1px solid var(--border); position: relative; }
+        .input-box { display: flex; gap: 8px; align-items: flex-end; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 10px 12px; transition: border-color 0.15s, box-shadow 0.15s; }
         .input-box:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(99,102,241,0.08); }
         textarea { flex: 1; background: none; border: none; outline: none; resize: none; font-size: 0.88rem; font-family: inherit; max-height: 160px; line-height: 1.55; color: var(--text); }
         textarea::placeholder { color: var(--text-muted); }
+        .input-icon-btn { background: none; border: none; color: var(--text-muted); width: 30px; height: 36px; cursor: pointer; font-size: 0.95rem; flex-shrink: 0; transition: color 0.15s; }
+        .input-icon-btn:hover { color: var(--text); }
+        .input-icon-btn.recording { color: #dc2626; animation: pulse 1s infinite; }
         .send-btn { background: var(--accent); color: white; border: none; width: 36px; height: 36px; border-radius: 8px; cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 0.95rem; flex-shrink: 0; transition: background 0.15s, transform 0.1s; }
         .send-btn:hover:not(:disabled) { background: var(--accent-hover); transform: scale(1.05); }
         .send-btn:disabled { opacity: 0.35; cursor: not-allowed; transform: none; }
+        .send-btn.stop-btn { background: #dc2626; opacity: 1; cursor: pointer; }
+        .send-btn.stop-btn:hover { background: #b91c1c; }
         .input-hint { display: flex; justify-content: space-between; margin-top: 7px; font-size: 0.69rem; color: var(--text-muted); padding: 0 2px; }
         .input-hint kbd { background: var(--bg); border: 1px solid var(--border); border-radius: 3px; padding: 1px 4px; font-family: 'Cascadia Code','Consolas',monospace; font-size: 0.67rem; }
         .no-session { flex: 1; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 14px; color: var(--text-muted); }
@@ -176,9 +220,12 @@
         .upload-progress-bar { height: 100%; background: var(--accent); width: 0%; transition: width 0.3s; }
         .welcome-caps { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
         .cap-chip { font-size: 0.75rem; background: var(--bg); border: 1px solid var(--border); padding: 4px 10px; border-radius: 20px; color: var(--text-muted); }
+        .cap-chip.clickable { cursor: pointer; transition: all 0.15s; }
+        .cap-chip.clickable:hover { background: var(--accent-soft, #eeecfb); color: var(--accent); border-color: var(--accent); }
         .welcome-box { max-width: 520px; text-align: center; }
         .welcome-box h2 { font-size: 1.15rem; margin-bottom: 6px; color: var(--text); }
         .welcome-box p  { font-size: 0.85rem; color: var(--text-muted); }
+        .welcome-custom-msg { background: var(--bot-bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 12px 16px; font-size: 0.87rem; text-align: left; margin-top: 14px; }
     </style>
 </head>
 <body>
@@ -236,10 +283,16 @@
 
         {{-- ── CHATS ── --}}
         <div class="sidebar-section-label" style="margin-top:8px;">💬 Chats</div>
-        <div class="session-list">
+        @if($sessions->count() > 3)
+        <div class="search-box" style="margin:0 8px 6px;">
+            <input type="text" id="sessionSearch" placeholder="Search chats…" oninput="filterSessions(this.value)">
+        </div>
+        @endif
+        <div class="session-list" id="sessionList">
             @foreach($sessions as $sess)
             <a href="{{ route('ai-chat.index', ['session' => $sess->id]) }}"
-               class="session-item {{ ($activeSession && $activeSession->id == $sess->id) ? 'active' : '' }}">
+               class="session-item {{ ($activeSession && $activeSession->id == $sess->id) ? 'active' : '' }}"
+               data-title="{{ strtolower($sess->title) }}" id="session-link-{{ $sess->id }}">
                 <span style="font-size:0.75rem;flex-shrink:0;">{{ $sess->project_id ? '📁' : '💬' }}</span>
                 <span class="session-title">{{ $sess->title }}</span>
                 @if($sess->project_id && $sess->project)
@@ -253,6 +306,7 @@
 
     <div class="sidebar-footer">
         <a href="https://packagist.org/packages/muradbdinfo/laravelai" target="_blank">muradbdinfo/laravelai</a>
+        <a href="{{ route('ai-chat.analytics') }}" title="Analytics">📊</a>
     </div>
 </aside>
 
@@ -261,7 +315,11 @@
     @if($activeSession)
         <div class="chat-header">
             <div class="header-icon {{ $activeSession->project_id ? 'project-header-icon' : '' }}">
-                {{ $activeSession->project_id ? '📁' : '💬' }}
+                @if(!$activeSession->project_id && !empty($ui['avatar_url']))
+                    <img src="{{ $ui['avatar_url'] }}" alt="">
+                @else
+                    {{ $activeSession->project_id ? '📁' : '💬' }}
+                @endif
             </div>
             <span class="header-title">{{ $activeSession->title }}</span>
             @if($activeSession->project_id && $activeSession->project)
@@ -275,7 +333,11 @@
                         📎 Manage Files
                     </button>
                 @endif
-                <span class="header-provider">{{ $providers[$activeProvider]['icon'] }} {{ $providers[$activeProvider]['label'] }}</span>
+                <span class="header-provider" id="headerProvider">{{ $providers[$activeProvider]['icon'] }} {{ $providers[$activeProvider]['label'] }}</span>
+                @if($ui['export_enabled'] ?? true)
+                <button class="icon-btn" title="Export conversation" onclick="exportConversation()">⬇</button>
+                @endif
+                <button class="icon-btn" id="fullscreenBtn" title="Fullscreen" onclick="toggleFullscreen()">⤢</button>
             </div>
         </div>
 
@@ -300,15 +362,33 @@
                                 <span class="cap-chip" style="background:#ecfdf5;border-color:#a7f3d0;color:#059669;">🧠 RAG context</span>
                             @endif
                         </div>
+                        @if(!empty($ui['welcome_enabled']) && !empty($ui['welcome_message']))
+                            <div class="welcome-custom-msg" id="welcomeMsg" data-raw="{{ e($ui['welcome_message']) }}"></div>
+                        @endif
+                        @if(!empty($ui['suggested_questions']))
+                            <div class="welcome-caps" style="justify-content:center;margin-top:12px;">
+                                @foreach($ui['suggested_questions'] as $q)
+                                    <span class="cap-chip clickable" onclick="sendSuggested({{ json_encode($q) }})">{{ $q }}</span>
+                                @endforeach
+                            </div>
+                        @endif
                     </div>
                 </div>
             @else
                 @foreach($messages as $msg)
                 <div class="msg-row {{ $msg->role }}">
                     <div class="avatar {{ $msg->role }}">
-                        {{ $msg->role === 'user' ? 'You' : 'AI' }}
+                        @if($msg->role === 'assistant' && !empty($ui['avatar_url']))
+                            <img src="{{ $ui['avatar_url'] }}" alt="">
+                        @else
+                            {{ $msg->role === 'user' ? 'You' : 'AI' }}
+                        @endif
                     </div>
-                    <div class="bubble-wrap">
+                    <div class="bubble-wrap" data-msg-id="{{ $msg->id }}" data-role="{{ $msg->role }}">
+                        <div class="msg-meta">
+                            <span class="msg-label">{{ $msg->role === 'user' ? 'You' : 'Assistant' }}</span>
+                            <span class="msg-time">{{ $msg->created_at?->format('H:i') }}</span>
+                        </div>
                         <div class="bubble {{ $msg->role }}">
                             @if($msg->role === 'assistant')
                                 <div class="md-body" data-raw="{{ e($msg->content) }}"></div>
@@ -318,7 +398,13 @@
                         </div>
                         @if($msg->role === 'assistant')
                         <div class="bubble-actions">
-                            <button class="copy-btn" onclick="copyText(this, {{ json_encode($msg->content) }})">Copy</button>
+                            <button class="icon-action" onclick="copyText(this, {{ json_encode($msg->content) }})">Copy</button>
+                            <button class="icon-action" onclick="downloadText({{ json_encode($msg->content) }}, 'message-{{ $msg->id }}.txt')">⬇ Save</button>
+                            @if($ui['tts_enabled'] ?? true)
+                            <button class="icon-action" onclick="toggleReadAloud(this, {{ json_encode($msg->content) }})">🔊 Read</button>
+                            @endif
+                            <button class="icon-action feedback-up"   onclick="sendFeedback({{ $msg->id }}, 1, this)">👍</button>
+                            <button class="icon-action feedback-down" onclick="sendFeedback({{ $msg->id }}, -1, this)">👎</button>
                         </div>
                         @endif
                     </div>
@@ -327,11 +413,35 @@
             @endif
         </div>
 
+        @if($captchaEnabled ?? false)
+        <div class="captcha-row hidden" id="captchaRow">
+            <span id="captchaQuestion">…</span>
+            <input type="number" id="captchaAnswer" placeholder="?">
+        </div>
+        @endif
+
+        @if($attachmentsEnabled ?? false)
+        <div class="attach-chips" id="attachChips"></div>
+        @endif
+
         <div class="input-area">
+            <div class="gdpr-overlay" id="gdprOverlay">
+                <div class="gdpr-card">
+                    <p>{{ $gdpr['text'] ?? '' }}</p>
+                    <button class="btn btn-primary" onclick="acceptGdpr()">{{ $gdpr['button'] ?? 'I Accept & Continue' }}</button>
+                </div>
+            </div>
             <div class="input-box">
+                @if($attachmentsEnabled ?? false)
+                <button class="input-icon-btn" title="Attach file" onclick="document.getElementById('attachInput').click()">📎</button>
+                <input type="file" id="attachInput" accept=".png,.jpg,.jpeg,.webp,.gif,.txt,.md,.pdf" style="display:none" onchange="uploadAttachment(this)">
+                @endif
                 <textarea id="input" rows="1"
                     placeholder="Message {{ $providers[$activeProvider]['label'] }}{{ $activeSession->project_id ? ' (RAG enabled)' : '' }}…"></textarea>
-                <button class="send-btn" id="sendBtn" onclick="sendMessage()" title="Send">▶</button>
+                @if($ui['voice_input_enabled'] ?? true)
+                <button class="input-icon-btn" id="micBtn" title="Voice input" onclick="toggleVoiceInput()">🎤</button>
+                @endif
+                <button class="send-btn" id="sendBtn" onclick="sendOrStop()" title="Send">▶</button>
             </div>
             <div class="input-hint">
                 <span>
@@ -422,8 +532,14 @@ document.querySelectorAll('.md-body[data-raw]').forEach(el => {
 const SESSION_ID   = {{ $activeSession ? $activeSession->id : 'null' }};
 const PROJECT_ID   = {{ $activeSession && $activeSession->project_id ? $activeSession->project_id : 'null' }};
 const CSRF         = document.querySelector('meta[name=csrf-token]').content;
+let   HAS_MESSAGES = {{ $messages->isNotEmpty() ? 'true' : 'false' }};
+const CAPTCHA_ENABLED = {{ ($captchaEnabled ?? false) ? 'true' : 'false' }};
+const ATTACHMENTS_ENABLED = {{ ($attachmentsEnabled ?? false) ? 'true' : 'false' }};
 let   isStreaming  = false;
 let   currentProjectId = null;
+let   captchaToken = null;
+let   currentAbortController = null;
+let   pendingAttachments = [];
 
 // ── SCROLL ──
 const msgEl = document.getElementById('messages');
@@ -464,50 +580,192 @@ async function deleteSession(id, btn) {
     if (SESSION_ID === id) window.location = '{{ route("ai-chat.index") }}';
 }
 
-// ── SEND MESSAGE ──
-function sendMessage() {
+function filterSessions(term) {
+    term = term.trim().toLowerCase();
+    document.querySelectorAll('#sessionList .session-item').forEach(el => {
+        el.classList.toggle('search-hidden', term !== '' && !el.dataset.title.includes(term));
+    });
+}
+
+// ── GDPR CONSENT ──
+function getCookie(name) {
+    return document.cookie.split('; ').find(r => r.startsWith(name + '='))?.split('=')[1];
+}
+function setCookie(name, value, days) {
+    document.cookie = `${name}=${value}; max-age=${days * 86400}; path=/; SameSite=Lax`;
+}
+@if(($gdpr['enabled'] ?? false) && $activeSession)
+if (!getCookie('laravelai_gdpr_consent')) {
+    document.getElementById('gdprOverlay')?.classList.add('open');
+}
+@endif
+function acceptGdpr() {
+    setCookie('laravelai_gdpr_consent', '1', 365);
+    document.getElementById('gdprOverlay')?.classList.remove('open');
+}
+
+// ── CAPTCHA ──
+async function ensureCaptcha() {
+    if (!CAPTCHA_ENABLED || HAS_MESSAGES) return;
+    const r = await fetch('{{ route("ai-chat.captcha") }}');
+    const d = await r.json();
+    captchaToken = d.token;
+    document.getElementById('captchaQuestion').textContent = d.question + ' =';
+    document.getElementById('captchaRow')?.classList.remove('hidden');
+}
+@if($activeSession)
+ensureCaptcha();
+@endif
+
+// ── SEND MESSAGE (fetch + manual SSE parsing — needed so blocked/rate-limited
+//    JSON error responses are readable; native EventSource can't expose them) ──
+function sendSuggested(text) {
+    document.getElementById('input').value = text;
+    sendOrStop();
+}
+
+function sendOrStop() {
+    if (isStreaming) { stopStreaming(); return; }
+    sendMessage(false);
+}
+
+function stopStreaming() {
+    currentAbortController?.abort();
+    isStreaming = false;
+    setSendButtonState(false);
+}
+
+function setSendButtonState(streaming) {
+    const btn = document.getElementById('sendBtn');
+    if (!btn) return;
+    btn.disabled = false;
+    btn.classList.toggle('stop-btn', streaming);
+    btn.textContent = streaming ? '■' : '▶';
+    btn.title = streaming ? 'Stop' : 'Send';
+}
+
+async function sendMessage(isRegenerate, regenText) {
     if (!SESSION_ID || isStreaming) return;
     const input = document.getElementById('input');
-    const text  = input.value.trim();
+    const text  = isRegenerate ? (regenText || '') : input.value.trim();
     if (!text) return;
 
-    input.value = '';
-    input.style.height = 'auto';
+    if (!isRegenerate) {
+        input.value = '';
+        input.style.height = 'auto';
+        appendMsg('user', text);
+    }
+
+    document.querySelector('.regen-row')?.remove();
+
     isStreaming = true;
-    document.getElementById('sendBtn').disabled = true;
+    setSendButtonState(true);
 
-    appendMsg('user', text);
-
-    const url = `{{ route('ai-chat.stream') }}?message=${encodeURIComponent(text)}&session_id=${SESSION_ID}`;
-    const es  = new EventSource(url);
     const div = appendMsg('assistant', '');
     div.classList.add('typing-cursor');
+    const bubbleWrap = div.closest('.bubble-wrap');
 
-    es.onmessage = e => {
-        if (e.data === '[DONE]') {
-            es.close();
+    const payload = {
+        message: text,
+        session_id: SESSION_ID,
+        regenerate: isRegenerate ? 1 : 0,
+    };
+    if (pendingAttachments.length) {
+        payload.attachment_ids = pendingAttachments.map(a => a.id);
+    }
+    if (captchaToken && !HAS_MESSAGES) {
+        payload.cap_token = captchaToken;
+        payload.cap_answer = document.getElementById('captchaAnswer')?.value || '';
+    }
+
+    currentAbortController = new AbortController();
+    let assistantId = null;
+
+    try {
+        const response = await fetch('{{ route("ai-chat.stream") }}', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': CSRF, 'Accept': 'text/event-stream' },
+            body: JSON.stringify(payload),
+            signal: currentAbortController.signal,
+        });
+
+        if (!response.ok) {
+            let msg = 'Request failed.';
+            try { msg = (await response.json()).error || msg; } catch (e) {}
+            div.textContent = '⚠ ' + msg;
             div.classList.remove('typing-cursor');
-            isStreaming = false;
-            document.getElementById('sendBtn').disabled = false;
+            finishStreaming();
             return;
         }
-        const d = JSON.parse(e.data);
-        if (d.error) {
-            div.textContent = '⚠ ' + d.error;
-            div.classList.remove('typing-cursor');
-            es.close(); isStreaming = false;
-            document.getElementById('sendBtn').disabled = false;
-        } else if (d.text) {
-            div.dataset.raw = (div.dataset.raw || '') + d.text;
-            div.innerHTML = marked.parse(div.dataset.raw);
-            scrollBottom();
+
+        const reader  = response.body.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+        let done = false;
+
+        while (!done) {
+            const { value, done: streamDone } = await reader.read();
+            done = streamDone;
+            buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+
+            const events = buffer.split('\n\n');
+            buffer = events.pop();
+
+            for (const evt of events) {
+                const line = evt.replace(/^data:\s?/, '').trim();
+                if (!line) continue;
+                if (line === '[DONE]') { done = true; break; }
+
+                let d;
+                try { d = JSON.parse(line); } catch (e) { continue; }
+
+                if (d.error) {
+                    div.textContent = '⚠ ' + d.error;
+                    div.classList.remove('typing-cursor');
+                } else if (d.text) {
+                    div.dataset.raw = (div.dataset.raw || '') + d.text;
+                    div.innerHTML = marked.parse(div.dataset.raw);
+                    scrollBottom();
+                } else if (d.assistant_id) {
+                    assistantId = d.assistant_id;
+                } else if (d.title) {
+                    updateSessionTitle(SESSION_ID, d.title);
+                }
+            }
         }
-    };
-    es.onerror = () => {
-        es.close(); isStreaming = false;
-        document.getElementById('sendBtn').disabled = false;
+
+        HAS_MESSAGES = true;
+        document.getElementById('captchaRow')?.classList.add('hidden');
+    } catch (e) {
+        if (e.name !== 'AbortError') {
+            div.textContent = '⚠ Connection error.';
+        }
+    } finally {
         div.classList.remove('typing-cursor');
-    };
+        if (bubbleWrap && assistantId) {
+            bubbleWrap.dataset.msgId = assistantId;
+            addAssistantActions(bubbleWrap, div.dataset.raw || '', assistantId);
+        }
+        pendingAttachments = [];
+        renderAttachChips();
+        finishStreaming();
+        attachRegenerateButton();
+    }
+}
+
+function finishStreaming() {
+    isStreaming = false;
+    setSendButtonState(false);
+}
+
+function updateSessionTitle(id, title) {
+    document.querySelector('.header-title') && (document.querySelector('.header-title').textContent = title);
+    const link = document.getElementById('session-link-' + id);
+    if (link) {
+        const span = link.querySelector('.session-title');
+        if (span) span.textContent = title;
+        link.dataset.title = title.toLowerCase();
+    }
 }
 
 function appendMsg(role, text) {
@@ -518,6 +776,13 @@ function appendMsg(role, text) {
     av.textContent = role === 'user' ? 'You' : 'AI';
     const bwrap = document.createElement('div');
     bwrap.className = 'bubble-wrap';
+    bwrap.dataset.role = role;
+
+    const meta = document.createElement('div');
+    meta.className = 'msg-meta';
+    meta.innerHTML = `<span class="msg-label">${role === 'user' ? 'You' : 'Assistant'}</span>
+                       <span class="msg-time">${new Date().toTimeString().slice(0,5)}</span>`;
+
     const bub = document.createElement('div');
     bub.className = 'bubble ' + role;
     const md = document.createElement('div');
@@ -525,6 +790,8 @@ function appendMsg(role, text) {
     if (role === 'user') { md.textContent = text; }
     else { md.dataset.raw = text; md.innerHTML = text ? marked.parse(text) : ''; }
     bub.appendChild(md);
+
+    bwrap.appendChild(meta);
     bwrap.appendChild(bub);
     wrap.appendChild(av);
     wrap.appendChild(bwrap);
@@ -533,15 +800,169 @@ function appendMsg(role, text) {
     return md;
 }
 
+function addAssistantActions(bubbleWrap, content, msgId) {
+    const actions = document.createElement('div');
+    actions.className = 'bubble-actions';
+    actions.innerHTML = `
+        <button class="icon-action" onclick="copyText(this, ${JSON.stringify(content)})">Copy</button>
+        <button class="icon-action" onclick="downloadText(${JSON.stringify(content)}, 'message-${msgId}.txt')">⬇ Save</button>
+        @if($ui['tts_enabled'] ?? true)
+        <button class="icon-action" onclick="toggleReadAloud(this, ${JSON.stringify(content)})">🔊 Read</button>
+        @endif
+        <button class="icon-action feedback-up" onclick="sendFeedback(${msgId}, 1, this)">👍</button>
+        <button class="icon-action feedback-down" onclick="sendFeedback(${msgId}, -1, this)">👎</button>
+    `;
+    bubbleWrap.appendChild(actions);
+}
+
+// ── REGENERATE ──
+function attachRegenerateButton() {
+    document.querySelector('.regen-row')?.remove();
+    const rows = document.querySelectorAll('.msg-row.assistant');
+    const last = rows[rows.length - 1];
+    if (!last) return;
+
+    const userRows = document.querySelectorAll('.msg-row.user');
+    const lastUser = userRows[userRows.length - 1];
+    if (!lastUser) return;
+    const lastUserText = lastUser.querySelector('.md-body')?.textContent || '';
+
+    const row = document.createElement('div');
+    row.className = 'regen-row';
+    row.innerHTML = `<button class="regen-btn" onclick="sendMessage(true, ${JSON.stringify(lastUserText)})">🔄 Regenerate</button>`;
+    last.after(row);
+}
+@if($activeSession && $messages->isNotEmpty())
+attachRegenerateButton();
+@endif
+
+// ── FEEDBACK ──
+async function sendFeedback(msgId, rating, btn) {
+    const r = await fetch(`{{ url('ai-chat/api/messages') }}/${msgId}/feedback`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-CSRF-TOKEN': CSRF },
+        body: JSON.stringify({ rating }),
+    });
+    if (!r.ok) return;
+    const group = btn.closest('.bubble-actions');
+    group.querySelectorAll('.feedback-up, .feedback-down').forEach(b => b.classList.remove('rated'));
+    btn.classList.add('rated');
+}
+
+// ── TTS (read aloud) ──
+let currentUtterance = null;
+function toggleReadAloud(btn, text) {
+    if (!('speechSynthesis' in window)) { alert('Text-to-speech is not supported in this browser.'); return; }
+    if (currentUtterance && speechSynthesis.speaking) {
+        speechSynthesis.cancel();
+        currentUtterance = null;
+        btn.textContent = '🔊 Read';
+        return;
+    }
+    const plain = text.replace(/[#*`_>\-]/g, '').replace(/\n{2,}/g, '. ');
+    currentUtterance = new SpeechSynthesisUtterance(plain);
+    currentUtterance.onend = () => { btn.textContent = '🔊 Read'; currentUtterance = null; };
+    btn.textContent = '⏸ Stop';
+    speechSynthesis.speak(currentUtterance);
+}
+
+// ── VOICE INPUT ──
+let recognition = null;
+let recording = false;
+function toggleVoiceInput() {
+    const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+    if (!SR) { alert('Voice input is not supported in this browser (try Chrome, Edge, or Safari).'); return; }
+    const micBtn = document.getElementById('micBtn');
+    if (recording) {
+        recognition?.stop();
+        return;
+    }
+    recognition = new SR();
+    recognition.lang = 'en-US';
+    recognition.interimResults = false;
+    recognition.onstart = () => { recording = true; micBtn.classList.add('recording'); };
+    recognition.onend = () => { recording = false; micBtn.classList.remove('recording'); };
+    recognition.onresult = (e) => {
+        const input = document.getElementById('input');
+        input.value = (input.value ? input.value + ' ' : '') + e.results[0][0].transcript;
+        input.dispatchEvent(new Event('input'));
+    };
+    recognition.start();
+}
+
+// ── FULLSCREEN ──
+function toggleFullscreen() {
+    document.body.classList.toggle('chat-fullscreen');
+    const btn = document.getElementById('fullscreenBtn');
+    if (btn) btn.classList.toggle('active');
+}
+document.addEventListener('keydown', e => {
+    if (e.key === 'Escape' && document.body.classList.contains('chat-fullscreen')) {
+        document.body.classList.remove('chat-fullscreen');
+    }
+});
+
+// ── EXPORT ──
+function downloadText(text, filename) {
+    const blob = new Blob([text], { type: 'text/plain' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(a.href);
+}
+function exportConversation() {
+    const lines = [];
+    document.querySelectorAll('.msg-row').forEach(row => {
+        const role = row.classList.contains('user') ? 'You' : 'Assistant';
+        const text = row.querySelector('.md-body')?.textContent || '';
+        lines.push(`[${role}]\n${text}\n`);
+    });
+    downloadText(lines.join('\n'), 'conversation-{{ $activeSession?->id }}.txt');
+}
+
+// ── ATTACHMENTS ──
+function renderAttachChips() {
+    const el = document.getElementById('attachChips');
+    if (!el) return;
+    el.innerHTML = pendingAttachments.map(a => `
+        <span class="attach-chip">${a.type === 'image' ? '🖼️' : '📄'} ${a.name}
+            <button onclick="removeAttachment(${a.id})">✕</button>
+        </span>
+    `).join('');
+}
+function removeAttachment(id) {
+    pendingAttachments = pendingAttachments.filter(a => a.id !== id);
+    renderAttachChips();
+}
+async function uploadAttachment(input) {
+    if (!input.files[0] || !SESSION_ID) return;
+    const formData = new FormData();
+    formData.append('file', input.files[0]);
+    formData.append('session_id', SESSION_ID);
+
+    const r = await fetch('{{ route("ai-chat.attachments.store") }}', {
+        method: 'POST',
+        headers: { 'X-CSRF-TOKEN': CSRF },
+        body: formData,
+    });
+    input.value = '';
+    const d = await r.json();
+    if (!r.ok) { alert(d.error || 'Upload failed'); return; }
+    pendingAttachments.push(d);
+    renderAttachChips();
+}
+
 // ── INPUT EVENTS ──
 @if($activeSession)
 document.getElementById('input').addEventListener('keydown', e => {
-    if (e.ctrlKey && e.key === 'Enter') { e.preventDefault(); sendMessage(); }
+    if (e.ctrlKey && e.key === 'Enter') { e.preventDefault(); sendOrStop(); }
 });
 document.getElementById('input').addEventListener('input', function () {
     this.style.height = 'auto';
     this.style.height = Math.min(this.scrollHeight, 160) + 'px';
 });
+document.getElementById('welcomeMsg') && (document.getElementById('welcomeMsg').innerHTML = marked.parse(document.getElementById('welcomeMsg').dataset.raw));
 @endif
 
 // ── COPY ──
@@ -618,9 +1039,18 @@ async function loadFiles(projectId) {
             <span class="file-item-icon">${f.mime_type === 'application/pdf' ? '📄' : '📝'}</span>
             <span class="file-item-name">${f.original_name}</span>
             <span class="file-item-status status-${f.status}">${f.status}</span>
-            <button class="file-item-del" onclick="deleteFile(${projectId}, ${f.id})">✕</button>
+            ${f.status === 'ingested' ? `<button class="file-item-del" title="Reprocess" onclick="reprocessFile(${projectId}, ${f.id})">↻</button>` : ''}
+            <button class="file-item-del" title="Delete" onclick="deleteFile(${projectId}, ${f.id})">✕</button>
         </div>
     `).join('');
+}
+
+async function reprocessFile(projectId, fileId) {
+    await fetch(`{{ url("ai-chat/api/projects") }}/${projectId}/files/${fileId}/reprocess`, {
+        method: 'POST',
+        headers: { 'X-CSRF-TOKEN': CSRF },
+    });
+    await loadFiles(projectId);
 }
 
 async function uploadFile(input) {

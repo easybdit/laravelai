@@ -7,6 +7,7 @@ use Illuminate\Support\Facades\Facade;
 
 /**
  * @method static \EasyAI\LaravelAI\Contracts\AIProviderInterface provider(string $name = null)
+ * @method static \EasyAI\LaravelAI\Drivers\CustomDriver custom(string $key)
  * @method static \EasyAI\LaravelAI\Contracts\AIResponseInterface chat(array $messages)
  * @method static \EasyAI\LaravelAI\Contracts\AIProviderInterface model(string $model)
  * @method static \EasyAI\LaravelAI\Contracts\AIProviderInterface temperature(float $temp)

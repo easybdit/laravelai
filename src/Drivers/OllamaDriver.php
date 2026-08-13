@@ -159,6 +159,18 @@ class OllamaDriver extends AbstractDriver
             }
         }
 
+        // A final line with no trailing newline (arrives in the same read()
+        // that hits EOF) would otherwise sit in $buffer and never get
+        // parsed — process whatever's left over the same way.
+        $line = trim($buffer);
+        if ($line !== '' && ($json = json_decode($line, true))) {
+            $chunk = $json['message']['content'] ?? '';
+            if ($chunk !== '') {
+                $fullContent .= $chunk;
+                $callback($chunk);
+            }
+        }
+
         $this->resetOverrides();
 
         return new AIResponse(

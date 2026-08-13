@@ -20,6 +20,7 @@ class AnthropicDriver extends AbstractDriver
     {
         $messages  = $this->prependSystemPrompt($messages);
         $formatted = MessageFormatter::normalize($messages, 'anthropic');
+        $formatted['messages'] = MessageFormatter::toProviderContent($formatted['messages'], 'anthropic');
         $url       = rtrim($this->config['url'], '/') . '/messages';
         $isStream  = $this->streamCallback !== null;
 
@@ -119,37 +120,45 @@ class AnthropicDriver extends AbstractDriver
         $stream = $response->toPsrResponse()->getBody();
         $buffer = '';
 
+        $handleLine = function (string $line) use ($callback, &$fullContent, &$inputTokens, &$outputTokens) {
+            $line = trim($line);
+            if (!str_starts_with($line, 'data: ')) {
+                return;
+            }
+            $json = json_decode(substr($line, 6), true);
+            if (!$json) {
+                return;
+            }
+
+            $type = $json['type'] ?? '';
+
+            if ($type === 'content_block_delta') {
+                $chunk = $json['delta']['text'] ?? '';
+                if ($chunk !== '') {
+                    $fullContent .= $chunk;
+                    $callback($chunk);
+                }
+            }
+            if ($type === 'message_delta') {
+                $outputTokens = $json['usage']['output_tokens'] ?? $outputTokens;
+            }
+            if ($type === 'message_start') {
+                $inputTokens = $json['message']['usage']['input_tokens'] ?? 0;
+            }
+        };
+
         while (!$stream->eof()) {
             $buffer .= $stream->read(1024);
             $lines = explode("\n", $buffer);
             $buffer = array_pop($lines);
 
             foreach ($lines as $line) {
-                $line = trim($line);
-                if (!str_starts_with($line, 'data: ')) continue;
-
-                $json = json_decode(substr($line, 6), true);
-                if (!$json) continue;
-
-                $type = $json['type'] ?? '';
-
-                if ($type === 'content_block_delta') {
-                    $chunk = $json['delta']['text'] ?? '';
-                    if ($chunk !== '') {
-                        $fullContent .= $chunk;
-                        $callback($chunk);
-                    }
-                }
-
-                if ($type === 'message_delta') {
-                    $outputTokens = $json['usage']['output_tokens'] ?? $outputTokens;
-                }
-
-                if ($type === 'message_start') {
-                    $inputTokens = $json['message']['usage']['input_tokens'] ?? 0;
-                }
+                $handleLine($line);
             }
         }
+        // A final line with no trailing newline (arrives in the same read()
+        // that hits EOF) would otherwise sit in $buffer unparsed.
+        $handleLine($buffer);
 
         $this->resetOverrides();
 

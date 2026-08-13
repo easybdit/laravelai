@@ -72,6 +72,81 @@ class RAGManager
         return $results;
     }
 
+    /**
+     * Search across every source AutoIndexer has written (each auto-indexed
+     * row is stored under "{configured source}:{model id}" so a single row
+     * can be de-indexed precisely on update/delete — this collects all of
+     * them back together at query time via a source-prefix match instead
+     * of the exact-match source() scoping used by ingest()/search().
+     */
+    public function searchAutoIndexed(string $query): array
+    {
+        $prefixes = collect(config('ai.rag.auto_index', []))->pluck('source')->filter()->unique()->values();
+        if ($prefixes->isEmpty()) {
+            return [];
+        }
+
+        $queryVector = $this->embed($query);
+
+        $results = DB::table(config('ai.rag.table'))
+            ->select(['content', 'source', 'embedding'])
+            ->where(function ($q) use ($prefixes) {
+                foreach ($prefixes as $prefix) {
+                    $q->orWhere('source', 'like', $prefix . ':%');
+                }
+            })
+            ->get()
+            ->map(fn ($row) => [
+                'content' => $row->content,
+                'source'  => $row->source,
+                'score'   => $this->cosine($queryVector, json_decode($row->embedding, true)),
+            ])
+            ->sortByDesc('score')
+            ->take(config('ai.rag.top_k', 3))
+            ->values()
+            ->toArray();
+
+        return $results;
+    }
+
+    /**
+     * Full-corpus keyword scan for "how many X" style questions. Top-K
+     * semantic search alone is unreliable for exact counts (relevant chunks
+     * can rank outside K, or several chunks can describe the same item) —
+     * this scans every stored chunk instead, with basic plural/singular
+     * matching, mirroring the WordPress plugin's "accurate counting" fix.
+     */
+    public function countMatches(string $term, ?string $source = null): int
+    {
+        $term = trim(mb_strtolower($term));
+        if ($term === '') {
+            return 0;
+        }
+
+        $variants = array_unique(array_filter([
+            $term,
+            str_ends_with($term, 's') ? mb_substr($term, 0, -1) : $term . 's',
+        ]));
+
+        $query = DB::table(config('ai.rag.table'))->select(['content']);
+        if ($source) {
+            $query->where('source', $source);
+        }
+
+        $count = 0;
+        foreach ($query->get() as $row) {
+            $content = mb_strtolower($row->content);
+            foreach ($variants as $variant) {
+                if ($variant !== '' && str_contains($content, $variant)) {
+                    $count++;
+                    break;
+                }
+            }
+        }
+
+        return $count;
+    }
+
     public function flush(?string $source = null): void
     {
         $target = $source ?? $this->sourceFilter;
