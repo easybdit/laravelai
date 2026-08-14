@@ -2,6 +2,8 @@
 
 A single, narrative walkthrough of installing the package and actually using every feature it ships, with real, copy-pasteable examples. The [README](README.md) is the full reference (config keys, edge cases, troubleshooting); this guide is the "zero to using everything" path.
 
+Never used this package before? [TUTORIAL.md](TUTORIAL.md) teaches the same ground by building one real feature end to end, with the "why" behind each step — read that first if you want a guided course rather than a feature list.
+
 ---
 
 ## 1. Install

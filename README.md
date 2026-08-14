@@ -135,6 +135,8 @@ No separate vector-database service to stand up first — the built-in scan back
 ## 📦 Installation
 
 > 📘 Prefer a single narrative walkthrough of every feature with real examples, install to done? See the **[Setup Guide](SETUP_GUIDE.md)**. This README is the full reference.
+>
+> 🎓 **Never used an AI package before?** Start with the **[Tutorial](TUTORIAL.md)** instead — it walks you through building one real, complete feature (a support chatbot with a knowledge base, tool calling, image generation, and cost tracking) step by step, taught the way a senior dev would pair with you on it. The Setup Guide above is for once you already know the package and just need a specific snippet.
 
 **Step 1:** Install via Composer
 
