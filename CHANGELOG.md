@@ -1,5 +1,15 @@
 # Changelog
 
+## v2.10.0 — 2026-08-15
+
+### 🟣 Together AI image-generation settings, now editable from the admin UI
+
+The Settings page (`/ai-chat/settings`) only ever surfaced `api_key`/`model`/`timeout` per provider. Together AI's FLUX image generation (the `/image` chat command) is gated by `config('ai.providers.together.image_enabled')`, but that flag had no field in the UI at all — an admin could save a working API key, see "Connected", and `/image` would still silently fall through to a normal text-only reply because the flag stayed false. Only `.env` could ever flip it, defeating the point of a DB-backed settings overlay for anyone managing a live install without shell access.
+
+The Together AI card now has four more fields: **Image enabled** (checkbox), **Image model**, **Image size**, **Image steps** — saved the same way every other setting is, through `SettingsOverlay`. Checkboxes don't submit at all when left unchecked, so a lone checkbox input could never actually save "off" once turned on; paired it with a same-named hidden input ahead of it in the form so both states are always submitted and cast correctly on save.
+
+240/240 tests passing.
+
 ## v2.9.1 — 2026-08-14
 
 ### 🔧 Fix: `chat_sessions` / `chat_messages` / `chat_attachments` renamed for namespace safety
