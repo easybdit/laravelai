@@ -63,7 +63,7 @@ class OllamaDriver extends AbstractDriver
                 return $this->handleStream($url, $body);
             }
 
-            $response = Http::timeout($this->getTimeout())
+            $response = $this->withRetry(Http::timeout($this->getTimeout()))
                 ->post($url, $body);
 
             if (!$response->successful()) {
@@ -98,6 +98,7 @@ class OllamaDriver extends AbstractDriver
                 raw:                 $data,
                 toolCalls:           $toolCalls,
                 rawAssistantMessage: $message,
+                structured:          $this->extractStructuredData($message['content'] ?? ''),
             );
 
             $this->log('Response', ['tokens' => $result->getTotalTokens()]);
@@ -210,6 +211,7 @@ class OllamaDriver extends AbstractDriver
                     model:            $json['model'] ?? $this->currentModel,
                     provider:         'ollama',
                     raw:              $json,
+                    structured:       $this->extractStructuredData($fullContent),
                 );
             }
         };
@@ -283,7 +285,7 @@ class OllamaDriver extends AbstractDriver
         $this->log('Embed', ['model' => $this->currentModel, 'inputs' => is_array($input) ? count($input) : 1]);
 
         try {
-            $response = Http::timeout($this->getTimeout())
+            $response = $this->withRetry(Http::timeout($this->getTimeout()))
                 ->post($url, $body);
 
             if (!$response->successful()) {

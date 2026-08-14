@@ -1,6 +1,6 @@
 {
     "name": "easybdit/laraveleasyai",
-    "version": "2.7.0",
+    "version": "2.8.0",
     "description": "Unified AI chat for Laravel — Ollama, OpenAI, Anthropic (Claude), DeepSeek. One interface, any AI.",
     "keywords": [
         "laravel", "ai", "ollama", "openai", "anthropic",
@@ -31,23 +31,24 @@
         }
     ],
     "require": {
-        "php": "^8.0",
+        "php": "^8.1",
         "illuminate/support": "^9.0 || ^10.0 || ^11.0 || ^12.0 || ^13.0",
-        "illuminate/http": "^9.0 || ^10.0 || ^11.0 || ^12.0 || ^13.0"
+        "illuminate/http": "^9.0 || ^10.0 || ^11.0 || ^12.0 || ^13.0",
+        "guzzlehttp/guzzle": "^7.5"
     },
     "require-dev": {
-        "orchestra/testbench": "^7.0 || ^8.0 || ^9.0 || ^10.0",
+        "orchestra/testbench": "^7.0 || ^8.0 || ^9.0 || ^10.0 || ^11.0",
         "phpunit/phpunit": "^9.5 || ^10.5 || ^11.0",
         "dompdf/dompdf": "^3.1",
         "phpoffice/phpword": "^1.4",
-        "phpoffice/phpspreadsheet": "^5.9",
+        "phpoffice/phpspreadsheet": "^4.0 || ^5.9",
         "phpoffice/phppresentation": "^0.9.0"
     },
     "suggest": {
         "smalot/pdfparser": "Required for PDF file ingestion in Projects (^2.0)",
         "dompdf/dompdf": "Required for exporting a conversation as PDF (^3.0)",
         "phpoffice/phpword": "Required for exporting a conversation as Word (.docx) (^1.4)",
-        "phpoffice/phpspreadsheet": "Required for exporting a conversation as Excel (.xlsx) (^5.0)",
+        "phpoffice/phpspreadsheet": "Required for exporting a conversation as Excel (.xlsx) (^4.0 on PHP 8.1, ^5.0 on PHP 8.2+ — 5.x raised its own PHP floor to 8.2)",
         "phpoffice/phppresentation": "Required for exporting a conversation as PowerPoint (.pptx) (^0.9)"
     },
     "autoload": {
@@ -75,9 +76,14 @@
     },
     "minimum-stability": "stable",
     "prefer-stable": true,
-    "policy": {
-        "advisories": {
-            "block": false
+    "config": {
+        "policy": {
+            "advisories": {
+                "block": false
+            }
+        },
+        "audit": {
+            "block-insecure": false
         }
     }
 }

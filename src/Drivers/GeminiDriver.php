@@ -99,6 +99,17 @@ class GeminiDriver extends AbstractDriver
             $generationConfig['thinkingConfig'] = ['includeThoughts' => $think];
         }
 
+        // Structured output — Gemini's native responseMimeType/responseSchema.
+        // A plain 'json' format asks for valid-JSON-only; a schema array
+        // additionally constrains the shape (subset of OpenAPI 3.0 schema,
+        // per Gemini's own docs — passed through as given).
+        if ($this->currentFormat !== null) {
+            $generationConfig['responseMimeType'] = 'application/json';
+            if (is_array($this->currentFormat)) {
+                $generationConfig['responseSchema'] = $this->currentFormat;
+            }
+        }
+
         if ($generationConfig) {
             $body['generationConfig'] = $generationConfig;
         }
@@ -127,9 +138,9 @@ class GeminiDriver extends AbstractDriver
                 return $this->handleStream($url, $body);
             }
 
-            $response = Http::timeout($this->getTimeout())
-                ->withQueryParameters(['key' => $this->config['api_key']])
-                ->post($url, $body);
+            $response = $this->withRetry(
+                Http::timeout($this->getTimeout())->withQueryParameters(['key' => $this->config['api_key']])
+            )->post($url, $body);
 
             if (!$response->successful()) {
                 throw new ProviderException(
@@ -168,6 +179,7 @@ class GeminiDriver extends AbstractDriver
                 raw:                 $data,
                 toolCalls:           $toolCalls,
                 rawAssistantMessage: $parts,
+                structured:          $this->extractStructuredData($content),
             );
 
             $this->log('Response', ['tokens' => $result->getTotalTokens()]);
@@ -247,6 +259,8 @@ class GeminiDriver extends AbstractDriver
         // that hits EOF) would otherwise sit in $buffer unparsed.
         $handleLine($buffer);
 
+        // Must read before resetOverrides() below clears currentFormat.
+        $structured = $this->extractStructuredData($fullContent);
         $this->resetOverrides();
 
         return new AIResponse(
@@ -256,7 +270,65 @@ class GeminiDriver extends AbstractDriver
             model:            $this->currentModel,
             provider:         'gemini',
             raw:              [],
+            structured:       $structured,
         );
+    }
+
+    /**
+     * Gemini's native embedContent (single input) / batchEmbedContents
+     * (array input) — verified against ai.google.dev/api/embeddings rather
+     * than assumed: batchEmbedContents requires each item in "requests" to
+     * carry its own "model" matching the URL's model (confirmed from the
+     * docs' own JSON example), not just a single top-level model field.
+     */
+    public function embed(string|array $input): array
+    {
+        $isBatch = is_array($input);
+        $action  = $isBatch ? 'batchEmbedContents' : 'embedContent';
+        $url     = rtrim($this->config['url'], '/') . "/models/{$this->currentModel}:{$action}";
+
+        $body = $isBatch
+            ? ['requests' => array_map(fn (string $text) => [
+                  'model'   => "models/{$this->currentModel}",
+                  'content' => ['parts' => [['text' => $text]]],
+              ], $input)]
+            : ['content' => ['parts' => [['text' => $input]]]];
+
+        $this->log('Embed', ['model' => $this->currentModel, 'inputs' => $isBatch ? count($input) : 1]);
+
+        try {
+            $response = $this->withRetry(
+                Http::timeout($this->getTimeout())->withQueryParameters(['key' => $this->config['api_key']])
+            )->post($url, $body);
+
+            if (!$response->successful()) {
+                throw new ProviderException(
+                    "gemini embed error: {$response->status()} - {$response->body()}",
+                    'gemini',
+                    ['status' => $response->status()],
+                    $response->status()
+                );
+            }
+
+            $data = $response->json();
+            $this->resetOverrides();
+
+            return $isBatch
+                ? array_map(fn (array $e) => $e['values'] ?? [], $data['embeddings'] ?? [])
+                : [$data['embedding']['values'] ?? []];
+        } catch (ProviderException $e) {
+            $this->resetOverrides();
+            throw $e;
+        } catch (\Throwable $e) {
+            $this->resetOverrides();
+            throw new ConnectionException(
+                "gemini embed connection failed: {$e->getMessage()}",
+                'gemini',
+                ['url' => $url],
+                0,
+                $e
+            );
+        }
     }
 
     public function health(): bool

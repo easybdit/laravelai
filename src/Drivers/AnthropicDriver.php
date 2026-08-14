@@ -13,6 +13,14 @@ use Illuminate\Support\Facades\Http;
 
 class AnthropicDriver extends AbstractDriver
 {
+    /**
+     * Name of the synthetic forced tool used to implement ->format()
+     * structured output — see doChat()'s "Structured output" comment.
+     * Deliberately distinctive so it can never collide with a real
+     * caller-defined Tool name.
+     */
+    private const STRUCTURED_TOOL_NAME = '__laravelai_structured_response';
+
     public function getProviderName(): string
     {
         return 'anthropic';
@@ -25,6 +33,18 @@ class AnthropicDriver extends AbstractDriver
         $formatted['messages'] = MessageFormatter::toProviderContent($formatted['messages'], 'anthropic');
         $url       = rtrim($this->config['url'], '/') . '/messages';
         $isStream  = $this->streamCallback !== null;
+
+        // ->format() is implemented here as a forced tool call (see below),
+        // and handleStream() only decodes text/thinking deltas — it has no
+        // parser for a streamed tool call's input_json_delta events. Rather
+        // than silently returning empty content for this combination, fail
+        // loudly: use ->format() with chat() (or drop ->stream() for this
+        // call) on Anthropic specifically.
+        if ($isStream && $this->currentFormat !== null) {
+            throw new \BadMethodCallException(
+                'Structured output (->format()) is not supported together with ->stream() on the Anthropic driver — the forced tool call this uses to get structured data isn\'t decodable from a text/thinking-only stream parser. Use ->format() with chat() instead.'
+            );
+        }
 
         $maxTokens = $this->getMaxTokens() ?? 2000;
 
@@ -61,6 +81,28 @@ class AnthropicDriver extends AbstractDriver
             ], $this->currentTools);
         }
 
+        // Structured output — Anthropic has no native JSON-mode/response_format,
+        // so this is built as a single forced tool call instead: a synthetic
+        // tool whose input_schema is the requested shape (or a bare "object"
+        // for a plain 'json' request, same guarantee as OpenAI's json_object
+        // mode), with tool_choice pinned to it so the model can't do anything
+        // but call it. Deliberately overrides $currentTools above rather than
+        // merging with them — combining a real agent tool set with a forced
+        // structured-output call isn't a coherent request (the model
+        // couldn't choose a real tool if one is being forced), so schema
+        // mode wins when both are set. The resulting tool_use block is
+        // unpacked back into plain content/structured below, not surfaced
+        // to the caller as a real tool call.
+        if ($this->currentFormat !== null) {
+            $schema = is_array($this->currentFormat) ? $this->currentFormat : ['type' => 'object'];
+            $body['tools'] = [[
+                'name'         => self::STRUCTURED_TOOL_NAME,
+                'description'  => 'Return the response as structured data in this exact shape.',
+                'input_schema' => $schema,
+            ]];
+            $body['tool_choice'] = ['type' => 'tool', 'name' => self::STRUCTURED_TOOL_NAME];
+        }
+
         $this->log('Request', ['model' => $this->currentModel, 'messages_count' => count($formatted['messages'])]);
 
         try {
@@ -68,13 +110,13 @@ class AnthropicDriver extends AbstractDriver
                 return $this->handleStream($url, $body);
             }
 
-            $response = Http::timeout($this->getTimeout())
-                ->withHeaders([
+            $response = $this->withRetry(
+                Http::timeout($this->getTimeout())->withHeaders([
                     'x-api-key'         => $this->config['api_key'],
                     'anthropic-version' => $this->config['version'] ?? '2023-06-01',
                     'content-type'      => 'application/json',
                 ])
-                ->post($url, $body);
+            )->post($url, $body);
 
             if (!$response->successful()) {
                 throw new ProviderException(
@@ -92,10 +134,20 @@ class AnthropicDriver extends AbstractDriver
             // there can be more than one tool_use block (parallel tool calls).
             $content = '';
             $toolCalls = [];
+            $structured = null;
             foreach ($data['content'] ?? [] as $block) {
                 if (($block['type'] ?? '') === 'text') {
                     $content .= $block['text'];
                 } elseif (($block['type'] ?? '') === 'tool_use') {
+                    // The forced structured-output call above (this ->format()
+                    // request's own synthetic tool, never a real caller tool)
+                    // — unpack its input as the structured payload instead of
+                    // surfacing it as a tool call the caller has to handle.
+                    if (($block['name'] ?? '') === self::STRUCTURED_TOOL_NAME) {
+                        $structured = $block['input'] ?? [];
+                        $content = json_encode($structured);
+                        continue;
+                    }
                     $toolCalls[] = new ToolCall(
                         id:        $block['id'] ?? null,
                         name:      $block['name'] ?? '',
@@ -113,6 +165,7 @@ class AnthropicDriver extends AbstractDriver
                 raw:                 $data,
                 toolCalls:           $toolCalls,
                 rawAssistantMessage: $data['content'] ?? [],
+                structured:          $structured,
             );
 
             $this->log('Response', ['tokens' => $result->getTotalTokens()]);

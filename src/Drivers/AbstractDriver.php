@@ -7,12 +7,24 @@ use EasyAI\LaravelAI\Contracts\AIProviderInterface;
 use EasyAI\LaravelAI\Contracts\AIResponseInterface;
 use EasyAI\LaravelAI\Exceptions\ConnectionException;
 use EasyAI\LaravelAI\Support\TokenEstimator;
+use Illuminate\Http\Client\ConnectionException as HttpConnectionException;
+use Illuminate\Http\Client\PendingRequest;
+use Illuminate\Http\Client\RequestException;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 
 abstract class AbstractDriver implements AIProviderInterface
 {
+    /**
+     * Status codes worth retrying — transient/rate-limit conditions where a
+     * second attempt has a real chance of succeeding. Deliberately excludes
+     * every 4xx except 429: a 400/401/404/etc. means this exact request is
+     * wrong or unauthorized, and retrying it wastes time without any
+     * chance of a different outcome.
+     */
+    private const RETRYABLE_STATUSES = [429, 500, 502, 503, 504];
+
     protected array  $config;
     protected string $currentModel;
     protected ?float $currentTemp   = null;
@@ -24,6 +36,8 @@ abstract class AbstractDriver implements AIProviderInterface
     protected string|array|null $currentFormat = null;
     protected array $currentOptions = [];
     protected ?bool $currentThink = null;
+    protected ?int $currentRetries = null;
+    protected ?int $currentRetrySleep = null;
 
     /** @var Tool[] */
     protected array $currentTools = [];
@@ -70,10 +84,35 @@ abstract class AbstractDriver implements AIProviderInterface
         return $this;
     }
 
+    /**
+     * Request structured output: 'json' for "must be valid JSON, no schema
+     * enforced", or a JSON Schema array to constrain the actual shape.
+     * Every provider translates this into its own native mechanism — OpenAI
+     * (and DeepSeek/Groq/Together/Custom, which inherit its driver)
+     * response_format, Gemini responseSchema, Anthropic a forced tool call,
+     * Ollama's native format param — so the same call site works regardless
+     * of provider. See extractStructuredData() and each driver's doChat().
+     */
     public function format(string|array $format): static
     {
         $this->currentFormat = $format;
         return $this;
+    }
+
+    /**
+     * Decodes $content as the structured-output payload when a schema/format
+     * was requested for this call — null otherwise, or if $content didn't
+     * decode to a JSON object/array (getContent() still has the raw text
+     * either way, so a malformed response is never silently swallowed).
+     */
+    protected function extractStructuredData(string $content): ?array
+    {
+        if ($this->currentFormat === null || $content === '') {
+            return null;
+        }
+
+        $decoded = json_decode($content, true);
+        return is_array($decoded) ? $decoded : null;
     }
 
     public function options(array $options): static
@@ -92,6 +131,68 @@ abstract class AbstractDriver implements AIProviderInterface
     {
         $this->currentTools = $tools;
         return $this;
+    }
+
+    /**
+     * Per-call override of config('ai.retry.*') (off by default — see that
+     * config's own docblock). $times is the total number of attempts, same
+     * semantics as Laravel's own Http::retry() that this wraps — ->retries(2)
+     * means "try, and if that fails, try once more" (2 attempts total), not
+     * 2 retries on top of the first. $sleepMilliseconds is the delay between
+     * attempts; null keeps the configured/default sleep. $times < 1 disables
+     * retrying entirely for this call (a plain single attempt, same as the
+     * config default of 0).
+     */
+    public function retries(int $times, ?int $sleepMilliseconds = null): static
+    {
+        $this->currentRetries = max(0, $times);
+        if ($sleepMilliseconds !== null) {
+            $this->currentRetrySleep = max(0, $sleepMilliseconds);
+        }
+        return $this;
+    }
+
+    protected function getRetryTimes(): int
+    {
+        return $this->currentRetries ?? (int) config('ai.retry.times', 0);
+    }
+
+    protected function getRetrySleep(): int
+    {
+        return $this->currentRetrySleep ?? (int) config('ai.retry.sleep', 1000);
+    }
+
+    /**
+     * Applies config('ai.retry.*')/->retries() to a driver's non-streaming
+     * PendingRequest before it's sent — one shared implementation so every
+     * driver's retry behavior (which statuses qualify, connection failures
+     * always qualifying) is identical rather than reimplemented per driver.
+     * A no-op (returns $request unchanged) when retries are 0/disabled,
+     * the common case. Never called from a driver's streaming path — see
+     * config('ai.retry')'s own docblock for why.
+     *
+     * throw:false means a persistently-failing response is returned
+     * normally after retries are exhausted rather than thrown — each
+     * driver's own `if (!$response->successful())` check right after this
+     * still catches it and raises this package's ProviderException exactly
+     * as it always has. A persistent connection failure still throws
+     * Illuminate's ConnectionException regardless of throw:false (Laravel's
+     * own documented behavior), which every driver's existing catch
+     * (\Throwable $e) block already re-wraps into this package's
+     * ConnectionException — no new error handling needed for this.
+     */
+    protected function withRetry(PendingRequest $request): PendingRequest
+    {
+        $times = $this->getRetryTimes();
+        if ($times < 1) {
+            return $request;
+        }
+
+        return $request->retry($times, $this->getRetrySleep(), function (\Throwable $exception) {
+            return $exception instanceof HttpConnectionException
+                || ($exception instanceof RequestException
+                    && in_array($exception->response->status(), self::RETRYABLE_STATUSES, true));
+        }, throw: false);
     }
 
     /**
@@ -320,5 +421,7 @@ abstract class AbstractDriver implements AIProviderInterface
         $this->currentOptions      = [];
         $this->currentThink        = null;
         $this->currentTools        = [];
+        $this->currentRetries      = null;
+        $this->currentRetrySleep   = null;
     }
 }
