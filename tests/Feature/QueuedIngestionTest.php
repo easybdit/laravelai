@@ -39,7 +39,12 @@ class QueuedIngestionTest extends TestCase
     {
         Storage::fake('local');
 
-        $file = UploadedFile::fake()->createWithContent('notes.txt', 'Some file content to ingest.');
+        // Unique filename per call, not a shared 'notes.txt' literal — two
+        // tests in this class both create a fake upload in quick
+        // succession, and a real temp-file collision/reuse between them
+        // is a cheap thing to rule out as a variable regardless of whether
+        // it's the actual cause of any given flake.
+        $file = UploadedFile::fake()->createWithContent(uniqid('notes_', true) . '.txt', 'Some file content to ingest.');
 
         return $this->withCredentials()
             ->withCookies($this->withGuestCookie($guestToken))
