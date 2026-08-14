@@ -92,7 +92,7 @@ class ChatToolCallingTest extends TestCase
         $this->assertStringContainsString('Here is the latest Laravel news.', $content);
         $this->assertStringContainsString('[DONE]', $content);
 
-        $this->assertDatabaseHas('chat_messages', [
+        $this->assertDatabaseHas('ai_chat_messages', [
             'chat_session_id' => $session->id,
             'role'            => 'assistant',
             'content'         => 'Here is the latest Laravel news.',

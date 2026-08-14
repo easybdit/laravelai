@@ -8,6 +8,12 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 class ChatSession extends Model
 {
+    // Explicit — Eloquent's own convention-derived name ("chat_sessions")
+    // is the pre-2026_08_14_000005 table name; see that migration's
+    // docblock for why it was renamed (namespace-collision safety, same
+    // reasoning as ai_projects/ai_project_files).
+    protected $table = 'ai_chat_sessions';
+
     protected $fillable = ['title', 'project_id', 'user_id', 'guest_token', 'provider', 'profile'];
 
     public function messages(): HasMany

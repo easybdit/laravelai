@@ -204,7 +204,7 @@ class AIChatController extends Controller
             abort(403);
         }
 
-        // The chat_attachments *rows* cascade-delete via the FK, but their
+        // The ai_chat_attachments *rows* cascade-delete via the FK, but their
         // actual files on disk (chat-attachments/{session_id}/...) don't —
         // a DB cascade only ever touches the database. Left alone, every
         // deleted session with attachments leaks its uploaded files
@@ -469,7 +469,7 @@ class AIChatController extends Controller
 
         $request->validate([
             'message'    => $isRegenerate ? 'nullable|string' : 'required|string',
-            'session_id' => 'required|integer|exists:chat_sessions,id',
+            'session_id' => 'required|integer|exists:ai_chat_sessions,id',
         ]);
 
         [$userId, $guestToken] = ChatIdentity::resolve($request);

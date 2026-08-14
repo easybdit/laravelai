@@ -16,7 +16,7 @@ class ProjectController extends Controller
     /**
      * Projects previously had no owner at all — index() returned every
      * project on the install to every visitor, and destroy() below let
-     * anyone delete anyone's. Scoped the same way chat_sessions already
+     * anyone delete anyone's. Scoped the same way ai_chat_sessions already
      * were: owned by the resolved identity, or predating the identity
      * migration entirely (stays visible rather than vanishing on upgrade).
      */

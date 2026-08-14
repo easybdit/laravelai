@@ -9,7 +9,7 @@ use Illuminate\Support\Carbon;
 
 /**
  * Zero-external-tracking usage dashboard — every number here comes from
- * the chat_sessions / chat_messages tables the package already writes to,
+ * the ai_chat_sessions / ai_chat_messages tables the package already writes to,
  * mirroring the WordPress plugin's Analytics page.
  */
 class AnalyticsController extends Controller
