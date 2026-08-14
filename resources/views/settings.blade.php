@@ -33,6 +33,13 @@
         .save-btn { background: #6366f1; color: #fff; border: none; padding: 10px 22px; border-radius: 9px; font-size: 0.88rem; font-weight: 600; cursor: pointer; }
         .save-btn:hover { background: #4f46e5; }
         .hint { font-size: 0.72rem; color: #9ca3af; margin-top: -4px; margin-bottom: 14px; }
+        .admin-row { display: flex; justify-content: space-between; align-items: center; padding: 7px 0; border-bottom: 1px solid #f0f0f5; font-size: 0.85rem; }
+        .admin-row:last-child { border-bottom: none; }
+        .you-badge { font-size: 0.65rem; font-weight: 600; background: #eef2ff; color: #4f46e5; padding: 1px 7px; border-radius: 20px; margin-left: 6px; }
+        .remove-btn { background: none; border: none; color: #dc2626; cursor: pointer; font-size: 0.78rem; padding: 2px 4px; }
+        .remove-btn:hover { text-decoration: underline; }
+        .add-admin-form { display: flex; gap: 8px; margin-top: 12px; }
+        .add-admin-form input { flex: 1; padding: 7px 10px; border: 1px solid #e0dced; border-radius: 8px; font-size: 0.85rem; font-family: inherit; }
     </style>
 </head>
 <body>
@@ -46,6 +53,38 @@
     @if($status)
         <div class="status">✅ {{ $status }}</div>
     @endif
+
+    <div class="card">
+        <h2>👤 Admin Access</h2>
+        <p class="hint" style="margin-top:0;">Who can reach this page. Add more people by email — no code changes, no redeploy.</p>
+
+        @if(count($admins))
+            <div>
+                @foreach($admins as $admin)
+                    <div class="admin-row">
+                        <span>
+                            {{ $admin['email'] }}
+                            @if($admin['user_id'] === $currentUserId)
+                                <span class="you-badge">YOU</span>
+                            @endif
+                        </span>
+                        <form method="POST" action="{{ route('ai-chat.settings.admins.remove', $admin['id']) }}"
+                              onsubmit="return confirm('Remove admin access for {{ $admin['email'] }}?');">
+                            @csrf
+                            @method('DELETE')
+                            <button type="submit" class="remove-btn">Remove</button>
+                        </form>
+                    </div>
+                @endforeach
+            </div>
+        @endif
+
+        <form method="POST" action="{{ route('ai-chat.settings.admins.add') }}" class="add-admin-form">
+            @csrf
+            <input type="email" name="email" placeholder="email@example.com — must already have an account" required>
+            <button type="submit" class="test-btn">+ Add admin</button>
+        </form>
+    </div>
 
     <form method="POST" action="{{ route('ai-chat.settings.update') }}">
         @csrf

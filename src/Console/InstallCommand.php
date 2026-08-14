@@ -18,6 +18,8 @@ class InstallCommand extends Command
 
     protected $description = 'Interactively set up LaravelAI — publishes config/assets, runs migrations, and configures your first AI provider';
 
+    private bool $adminConfigured = false;
+
     public function handle(): int
     {
         $this->info('🤖 Setting up LaravelAI...');
@@ -26,7 +28,11 @@ class InstallCommand extends Command
 
         $this->publishConfig();
         $this->publishChatAssets();
-        $this->maybeMigrate();
+        $migrated = $this->maybeMigrate();
+
+        if ($migrated) {
+            $this->maybeCreateAdmin();
+        }
 
         [$providerKey, $envPairs] = $this->configureProvider();
 
@@ -72,7 +78,7 @@ class InstallCommand extends Command
         $this->call('vendor:publish', ['--tag' => 'ai-chat-assets', '--force' => $force]);
     }
 
-    private function maybeMigrate(): void
+    private function maybeMigrate(): bool
     {
         $this->newLine();
 
@@ -82,9 +88,36 @@ class InstallCommand extends Command
         // and wouldn't want an installer running one ad hoc, so ask first.
         if ($this->confirm('Run database migrations now?', true)) {
             $this->call('migrate');
-        } else {
-            $this->line('Skipping migrations — run `php artisan migrate` yourself before using the chat UI.');
+            return true;
         }
+
+        $this->line('Skipping migrations — run `php artisan migrate` yourself before using the chat UI.');
+        return false;
+    }
+
+    /**
+     * The Settings page (/ai-chat/settings) is fail-closed by default —
+     * nobody can reach it until at least one row exists in ai_admins, and
+     * that first row is a genuine bootstrap problem (the UI that manages
+     * admins is itself gated by one already existing). Folding it into the
+     * installer means most people never have to know that detail exists —
+     * only reached when maybeMigrate() actually ran migrations, since the
+     * ai_admins table has to exist first. Entirely skippable: leaving the
+     * email blank does nothing, exactly like never running
+     * `laravelai:make-admin` at all — the old manual path still works.
+     */
+    private function maybeCreateAdmin(): void
+    {
+        $this->newLine();
+        $email = $this->ask('Which email should be able to manage AI settings later (/ai-chat/settings)? Leave blank to skip for now');
+
+        if (!$email) {
+            $this->line('Skipping — run `php artisan laravelai:make-admin` yourself whenever you\'re ready to grant this.');
+            return;
+        }
+
+        $exitCode = $this->call('laravelai:make-admin', ['email' => $email]);
+        $this->adminConfigured = $exitCode === 0;
     }
 
     /**
@@ -250,7 +283,13 @@ class InstallCommand extends Command
     {
         $this->newLine();
         $this->info('✅ LaravelAI is set up! Visit /ai-chat in your browser to start chatting.');
-        $this->line('Want the Settings page too? It\'s fail-closed by default — define a Gate to unlock /ai-chat/settings:');
-        $this->line("  Gate::define('manage-ai-settings', fn (\$user) => \$user->isAdmin());");
+
+        if ($this->adminConfigured) {
+            $this->line('Want the Settings page too? You\'re already set up — visit /ai-chat/settings and log in as the email you just entered.');
+        } else {
+            $this->line('Want the Settings page too? It\'s fail-closed by default — grant yourself access with:');
+            $this->line('  php artisan laravelai:make-admin your@email.com');
+            $this->line('Then log in as that user and visit /ai-chat/settings — more admins can be added from that page afterward, no code needed.');
+        }
     }
 }

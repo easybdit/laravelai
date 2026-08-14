@@ -2,8 +2,24 @@
 
 namespace EasyAI\LaravelAI\Tests\Feature;
 
+use EasyAI\LaravelAI\Chat\Models\AiAdmin;
 use EasyAI\LaravelAI\Tests\TestCase;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Schema;
+
+/**
+ * Self-contained fixture, deliberately not shared with AdminAccessTest's
+ * own TestAdminUser — cross-file class reuse for a fixture this small
+ * would only make both files more fragile to run in isolation.
+ */
+class InstallCommandTestUser extends Authenticatable
+{
+    protected $table = 'users';
+    protected $fillable = ['name', 'email'];
+    public $timestamps = false;
+}
 
 /**
  * `php artisan laravelai:install` — the guided one-command setup. Every
@@ -68,6 +84,10 @@ class InstallCommandTest extends TestCase
 
         $this->artisan('laravelai:install')
             ->expectsConfirmation('Run database migrations now?', 'yes')
+            ->expectsQuestion(
+                'Which email should be able to manage AI settings later (/ai-chat/settings)? Leave blank to skip for now',
+                ''
+            )
             ->expectsChoice(
                 'Which AI provider do you want to use?',
                 'Ollama (free, self-hosted)',
@@ -148,6 +168,10 @@ class InstallCommandTest extends TestCase
         // test on the first unexpected question.
         $this->artisan('laravelai:install', ['--force' => true])
             ->expectsConfirmation('Run database migrations now?', 'yes')
+            ->expectsQuestion(
+                'Which email should be able to manage AI settings later (/ai-chat/settings)? Leave blank to skip for now',
+                ''
+            )
             ->expectsChoice(
                 'Which AI provider do you want to use?',
                 'Ollama (free, self-hosted)',
@@ -167,5 +191,45 @@ class InstallCommandTest extends TestCase
             ->assertExitCode(0);
 
         $this->assertStringContainsString('AI_PROVIDER=ollama', file_get_contents($this->envPath()));
+    }
+
+    public function test_entering_an_email_grants_ai_settings_access_via_the_installer(): void
+    {
+        config(['auth.providers.users.model' => InstallCommandTestUser::class]);
+        Schema::create('users', function (Blueprint $table) {
+            $table->id();
+            $table->string('name');
+            $table->string('email')->unique();
+        });
+        $user = InstallCommandTestUser::create(['name' => 'Owner', 'email' => 'owner@example.com']);
+
+        Http::fake(['*' => Http::response('Ollama is running', 200)]);
+
+        $this->artisan('laravelai:install')
+            ->expectsConfirmation('Run database migrations now?', 'yes')
+            ->expectsQuestion(
+                'Which email should be able to manage AI settings later (/ai-chat/settings)? Leave blank to skip for now',
+                'owner@example.com'
+            )
+            ->expectsChoice(
+                'Which AI provider do you want to use?',
+                'Ollama (free, self-hosted)',
+                [
+                    'Ollama (free, self-hosted)',
+                    'OpenAI (ChatGPT)',
+                    'Anthropic (Claude)',
+                    'DeepSeek',
+                    'Google Gemini',
+                ]
+            )
+            ->expectsQuestion('Ollama server URL', 'http://127.0.0.1:11434')
+            ->expectsQuestion(
+                'Ollama model (default qwen2:1.5b — fast/light; try llama3.1:8b for a larger, more capable model)',
+                'qwen2:1.5b'
+            )
+            ->expectsOutputToContain("You're already set up")
+            ->assertExitCode(0);
+
+        $this->assertDatabaseHas('ai_admins', ['user_id' => $user->id]);
     }
 }
