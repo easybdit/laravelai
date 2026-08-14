@@ -478,6 +478,21 @@ php artisan laravelai:make-admin your@email.com
 
 Log in as that user and `/ai-chat/settings` just works — a "👤 Admin Access" panel right there lets that admin add or remove other admins by email, no code changes or redeploys needed for every admin after the first. `php artisan laravelai:install` also offers to do this for you as part of the guided setup.
 
+**Why it might say "No user found"**: this command *grants* access to an existing account, it doesn't create one — and a fresh Laravel install has no users yet. Create one first, then re-run the command:
+
+```bash
+php artisan tinker
+```
+```php
+\App\Models\User::create([
+    'name'     => 'Your Name',
+    'email'    => 'your@email.com',
+    'password' => bcrypt('choose-a-real-password'),
+]);
+```
+
+Or, if you'd rather register through a real UI, scaffold one first (e.g. `composer require laravel/breeze --dev && php artisan breeze:install`), sign up at `/register`, then run `laravelai:make-admin` against that email.
+
 Already have your own roles/permissions system? Define the Gate yourself anywhere in your app (`AppServiceProvider::boot()` is the usual place) and it takes over completely — this package's own default only ever applies when nothing else has claimed the ability:
 
 ```php
@@ -558,7 +573,7 @@ Upload images and documents (`.txt`/`.md`/`.pdf`) mid-chat. Documents are text-e
 
 ## 📊 Analytics & Webhooks
 
-Visit `/ai-chat/analytics` for a zero-external-tracking dashboard — total conversations/messages, messages today, active chats (7d), most-used provider, a 7-day bar chart, and feedback stats — computed entirely from your own `chat_sessions`/`chat_messages` tables.
+Visit `/ai-chat/analytics` for a zero-external-tracking dashboard — total conversations/messages, messages today, active chats (7d), most-used provider, a 7-day bar chart, and feedback stats — computed entirely from your own `ai_chat_sessions`/`ai_chat_messages` tables.
 
 ```env
 AI_CHAT_WEBHOOK_URL=https://your-endpoint.example.com/hook
@@ -1369,6 +1384,7 @@ Either way, the sidebar's identity line will pick up the resolved identity autom
 | v2.8 | PHP requirement corrected to the true minimum (`^8.1`) | ✅ Released |
 | v2.9 | Scalable Settings-page admin access — `laravelai:make-admin`, an "Admin Access" UI panel, no hand-written Gate required | ✅ Released |
 | v2.9 | Fix — `ai:rag:ingest` was fully built and documented but never actually registered as a runnable command | ✅ Released |
+| v2.9.1 | Fix — `chat_sessions`/`chat_messages`/`chat_attachments` renamed to `ai_chat_*` for namespace-collision safety, verified live against real MySQL data | ✅ Released |
 | v2.10 | Streaming the agent module's final answer after the tool-call loop resolves | 🔜 Planned |
 
 ---

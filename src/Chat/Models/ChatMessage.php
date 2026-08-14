@@ -8,6 +8,10 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class ChatMessage extends Model
 {
+    // See ChatSession's own $table — same rename, same reasoning
+    // (2026_08_14_000005_rename_chat_tables_for_namespace_safety).
+    protected $table = 'ai_chat_messages';
+
     protected $fillable = ['chat_session_id', 'role', 'content', 'rating'];
 
     public function session(): BelongsTo

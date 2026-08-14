@@ -1,5 +1,17 @@
 # Changelog
 
+## v2.9.1 — 2026-08-14
+
+### 🔧 Fix: `chat_sessions` / `chat_messages` / `chat_attachments` renamed for namespace safety
+
+The same real problem `2026_08_14_000002` already fixed for `projects`/`project_files` (v2.4.0) — bare, generic table names with a real chance of colliding with a host app's own tables — had three tables left unfixed: `chat_sessions`, `chat_messages` (shipped since v1.0.0), and `chat_attachments` (v2.0.0). Every other table this package creates already carries an `ai_` prefix; these three were simply missed at the time. Found while reviewing a real host app's database in phpMyAdmin and noticing the inconsistency directly.
+
+Renamed to `ai_chat_sessions` / `ai_chat_messages` / `ai_chat_attachments`, not recreated — a fresh `Schema::create()` would silently orphan every existing install's real conversation history. `ChatSession`/`ChatMessage`/`ChatAttachment` now declare an explicit `$table` (they relied on Eloquent's convention-derived name before), and the one raw table-name reference in application code (`AIChatController`'s `session_id` validation rule, `exists:chat_sessions,id`) is fixed to match — the kind of reference a rename can silently leave broken if you only search for "am I creating the right migration" and don't grep the whole codebase for the old name.
+
+Verified for real, not just in the test suite: ran this migration against a real MySQL database with real pre-existing conversation history (not a fresh install) — confirmed via `information_schema.KEY_COLUMN_USAGE` that the real foreign key (`chat_messages_chat_session_id_foreign`) automatically followed the rename to reference `ai_chat_sessions`, confirmed the actual row data survived untouched, and confirmed the fixed validation rule correctly rejects an invalid `session_id` with a clean `422` (proving it resolves against the renamed table — the old rule would have thrown a `QueryException` instead, referencing a table that no longer exists). Same rename-in-place pattern already proven safe across MySQL/Postgres/SQLite by `2026_08_14_000002`, now with live-database confirmation on top of that CI precedent.
+
+240/240 tests passing (existing coverage already exercised every affected code path — passing unchanged after the rename *is* the regression proof, no new tests needed).
+
 ## v2.9.0 — 2026-08-14
 
 ### 👤 Scalable Settings-page admin access

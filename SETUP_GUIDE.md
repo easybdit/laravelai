@@ -354,6 +354,13 @@ php artisan laravelai:make-admin your@email.com
 
 Log in as that user and visit `/ai-chat/settings` — a "👤 Admin Access" panel right there lets you add or remove other admins by email afterward, no code needed. Already have your own roles system? `Gate::define('manage-ai-settings', fn ($user) => $user->hasRole('admin'));` anywhere in your app takes over completely.
 
+Get "No user found with that email"? This grants access to an *existing* account, it doesn't create one — a fresh install has no users yet:
+```bash
+php artisan tinker
+>>> \App\Models\User::create(['name' => 'You', 'email' => 'your@email.com', 'password' => bcrypt('choose-a-real-password')]);
+```
+Then re-run `laravelai:make-admin` against that same email.
+
 If your frontend is a Vue/React SPA using Bearer-token auth rather than Laravel sessions, `$request->user()` won't see your logged-in user on a plain page navigation to `/ai-chat` — see the README's Troubleshooting section for the two fixes (a session-bridge endpoint, or `config('ai.chat.identity_resolver')`).
 
 ---

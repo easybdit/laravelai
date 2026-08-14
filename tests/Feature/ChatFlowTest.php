@@ -40,7 +40,7 @@ class ChatFlowTest extends TestCase
     {
         $response = $this->postJson('/ai-chat/api/sessions', []);
         $response->assertOk();
-        $this->assertDatabaseHas('chat_sessions', ['id' => $response->json('session.id')]);
+        $this->assertDatabaseHas('ai_chat_sessions', ['id' => $response->json('session.id')]);
 
         $session = ChatSession::first();
         $this->assertNull($session->user_id);
@@ -74,8 +74,8 @@ class ChatFlowTest extends TestCase
 
         $this->assertStringContainsString('Hello there!', $content);
         $this->assertStringContainsString('[DONE]', $content);
-        $this->assertDatabaseHas('chat_messages', ['chat_session_id' => $session->id, 'role' => 'user']);
-        $this->assertDatabaseHas('chat_messages', ['chat_session_id' => $session->id, 'role' => 'assistant']);
+        $this->assertDatabaseHas('ai_chat_messages', ['chat_session_id' => $session->id, 'role' => 'user']);
+        $this->assertDatabaseHas('ai_chat_messages', ['chat_session_id' => $session->id, 'role' => 'assistant']);
     }
 
     public function test_stream_completes_cleanly_if_saving_the_assistant_reply_throws(): void
@@ -135,7 +135,7 @@ class ChatFlowTest extends TestCase
         ]);
 
         $response->assertStatus(400)->assertJsonStructure(['error']);
-        $this->assertDatabaseMissing('chat_messages', ['chat_session_id' => $session->id]);
+        $this->assertDatabaseMissing('ai_chat_messages', ['chat_session_id' => $session->id]);
     }
 
     public function test_feedback_persists_rating(): void
@@ -146,7 +146,7 @@ class ChatFlowTest extends TestCase
         $response = $this->postJson("/ai-chat/api/messages/{$message->id}/feedback", ['rating' => 1]);
 
         $response->assertOk();
-        $this->assertDatabaseHas('chat_messages', ['id' => $message->id, 'rating' => 1]);
+        $this->assertDatabaseHas('ai_chat_messages', ['id' => $message->id, 'rating' => 1]);
     }
 
     public function test_ip_blocklist_rejects_the_request(): void
@@ -194,11 +194,11 @@ class ChatFlowTest extends TestCase
 
         $response->assertOk();
         $response->streamedContent(); // forces the streaming closure to actually run
-        $this->assertDatabaseMissing('chat_messages', ['id' => $lastAssistantId]);
-        $this->assertDatabaseHas('chat_messages', ['chat_session_id' => $session->id, 'content' => 'Regenerated answer']);
+        $this->assertDatabaseMissing('ai_chat_messages', ['id' => $lastAssistantId]);
+        $this->assertDatabaseHas('ai_chat_messages', ['chat_session_id' => $session->id, 'content' => 'Regenerated answer']);
         // The earlier turns are untouched — only the true last reply was replaced.
-        $this->assertDatabaseHas('chat_messages', ['chat_session_id' => $session->id, 'content' => 'Answer 1']);
-        $this->assertDatabaseHas('chat_messages', ['chat_session_id' => $session->id, 'content' => 'Answer 2']);
+        $this->assertDatabaseHas('ai_chat_messages', ['chat_session_id' => $session->id, 'content' => 'Answer 1']);
+        $this->assertDatabaseHas('ai_chat_messages', ['chat_session_id' => $session->id, 'content' => 'Answer 2']);
     }
 
     public function test_stream_still_correctly_detects_first_message_with_a_tiny_history_cap(): void
