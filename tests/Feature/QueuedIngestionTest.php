@@ -89,7 +89,12 @@ class QueuedIngestionTest extends TestCase
 
         $response = $this->uploadFile($project, $guestToken);
 
-        $response->assertStatus(201);
+        // TEMPORARY: PHP 8.1 x Laravel 10 CI leg gets a real, reproducible
+        // 422 here with no visible cause locally — dumping the actual
+        // response body into the assertion message (assertStatus() itself
+        // takes no message argument) instead of guessing at a fix blind.
+        // Remove once the real cause is known.
+        $this->assertSame(201, $response->status(), 'Got ' . $response->status() . ' instead: ' . $response->getContent());
         $response->assertJsonPath('status', 'queued');
 
         $this->assertDatabaseHas('ai_project_files', [
