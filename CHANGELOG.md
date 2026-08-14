@@ -1,5 +1,27 @@
 # Changelog
 
+## v2.9.0 — 2026-08-14
+
+### 👤 Scalable Settings-page admin access
+
+The only way to unlock `/ai-chat/settings` used to be hand-writing `Gate::define('manage-ai-settings', fn ($user) => $user->isAdmin())` yourself — meaning every install needed its own bespoke admin check, and adding a second admin meant editing PHP and redeploying. Replaced with a real, scalable mechanism:
+
+```bash
+php artisan laravelai:make-admin your@email.com
+```
+
+Grants access instantly — no Gate to write. This package now registers its own default `manage-ai-settings` Gate (checking a new `ai_admins` table) in `ChatServiceProvider::boot()`, so a fresh install needs zero admin-access code at all. Fully backward compatible and non-breaking for every existing install: Laravel boots a host app's own `AppServiceProvider` after every package provider, so an app that already defines this Gate keeps working exactly as before — this package's default only ever applies when nothing else has claimed the ability. A regression test locks in that override behavior specifically, since the whole design depends on it.
+
+The Settings page itself now has a "👤 Admin Access" panel — add or remove admins by email, no CLI needed for anyone after the first. The first admin is a genuine bootstrap problem (that panel is itself gated by an admin already existing), solved by the CLI command above; `php artisan laravelai:install` also offers to run it for you as part of the guided setup, so most people never need to know the detail exists at all.
+
+`ai_admins` stores only a bare `user_id` (no foreign key, no assumption about the host app's `users` table shape) — same intentionally-loose pattern already used for `chat_sessions.user_id`. The host app's own User model is resolved dynamically via `config('auth.providers.users.model')`, never assumed to be `\App\Models\User`.
+
+18 new tests (Gate defaults, the host-app-override regression, the CLI command's found/not-found/idempotent paths, add/remove-admin UI actions, the last-admin-removal guard, and the installer's new prompt in both the skip and enter-email paths). 240/240 passing overall.
+
+### 🔧 Fix: `ai:rag:ingest` was never actually a real command
+
+Found while registering the new `laravelai:make-admin` command in the same array: `RagIngestCommand` was fully implemented and documented in the README (`php artisan ai:rag:ingest storage/docs/manual.txt --source=manual`) but never once passed to `$this->commands([...])` anywhere in this package — it silently didn't exist as a runnable artisan command. Also found, while tracking this down, a duplicate copy of the same class at `src/RAG/Console/RagIngestCommand.php` declaring the wrong namespace for its file location (`EasyAI\LaravelAI\Console` instead of `EasyAI\LaravelAI\RAG\Console`) — dead, unautoloadable code left over from what looks like an incomplete file move; flagged for removal, not deleted in this pass since it wasn't part of the fix itself.
+
 ## v2.8.0 — 2026-08-14
 
 ### 🗂️ Structured output — `->format($schema)` across every provider

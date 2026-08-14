@@ -470,12 +470,21 @@ Internal exception detail (e.g. "No API key configured for OpenAI") is only show
 
 Change providers/API keys from `/ai-chat/settings` instead of editing `.env` and redeploying. `.env` stays the source of truth for everything you never touch in the UI — this is a purely additive override layer, not a replacement.
 
-```php
-// AppServiceProvider (or any provider) — required, fail-closed by default:
-Gate::define('manage-ai-settings', fn ($user) => $user->isAdmin());
+**Fail-closed by default** — nobody can reach it until you grant access, and there's no "everyone" mode for editing API keys, regardless of how the main chat's own access restriction is configured. Grant the first admin from the CLI:
+
+```bash
+php artisan laravelai:make-admin your@email.com
 ```
 
-Without that Gate defined, **every** request to the Settings page is refused — there's no "everyone" mode for editing API keys, regardless of how the main chat's own access restriction is configured. Secrets are masked in the UI (last 4 characters only) and never overwritten unless you actually type a new value; blanking a field deletes the override and falls back to `.env` again.
+Log in as that user and `/ai-chat/settings` just works — a "👤 Admin Access" panel right there lets that admin add or remove other admins by email, no code changes or redeploys needed for every admin after the first. `php artisan laravelai:install` also offers to do this for you as part of the guided setup.
+
+Already have your own roles/permissions system? Define the Gate yourself anywhere in your app (`AppServiceProvider::boot()` is the usual place) and it takes over completely — this package's own default only ever applies when nothing else has claimed the ability:
+
+```php
+Gate::define('manage-ai-settings', fn ($user) => $user->hasRole('admin'));
+```
+
+Secrets are masked in the UI (last 4 characters only) and never overwritten unless you actually type a new value; blanking a field deletes the override and falls back to `.env` again.
 
 **Storage:** API keys are encrypted (Laravel's `Crypt`, your app's `APP_KEY`) before ever touching the database — never stored in plaintext. Every provider driver's `health()` (used by the page's "Test connection" button) is also audited to confirm none of them can leak a credential through an exception message.
 
@@ -1307,7 +1316,7 @@ window.location.href = '/ai-chat'
 ],
 ```
 
-Either way, the sidebar's identity line and the Settings page's Gate (`manage-ai-settings` — also fail-closed until you define it, same pattern as everywhere else in this package) will pick up the resolved identity automatically. Option A also fixes `$request->user()` everywhere else on `/ai-chat`, not just chat ownership — the safer default if you're not sure which you need.
+Either way, the sidebar's identity line will pick up the resolved identity automatically. Option A also fixes `$request->user()` everywhere else on `/ai-chat`, not just chat ownership — the safer default if you're not sure which you need. Note that the Settings page's `manage-ai-settings` Gate specifically still checks `$request->user()` directly (see [Provider Settings UI & Auth Guard](#-provider-settings-ui--auth-guard)), not `identity_resolver` — a token-auth SPA visitor needs a real bridged session (Option A) to reach `/ai-chat/settings`, not just a resolved identity for chat ownership.
 
 ---
 
@@ -1358,7 +1367,9 @@ Either way, the sidebar's identity line and the Settings page's Gate (`manage-ai
 | v2.8 | Audio — `->transcribe()` / `->textToSpeech()` (OpenAI, inherited by Groq/Together where each genuinely supports it) | ✅ Released |
 | v2.8 | Cost estimation (`getEstimatedCost()`, config-driven — no built-in prices, by design) | ✅ Released |
 | v2.8 | PHP requirement corrected to the true minimum (`^8.1`) | ✅ Released |
-| v2.9 | Streaming the agent module's final answer after the tool-call loop resolves | 🔜 Planned |
+| v2.9 | Scalable Settings-page admin access — `laravelai:make-admin`, an "Admin Access" UI panel, no hand-written Gate required | ✅ Released |
+| v2.9 | Fix — `ai:rag:ingest` was fully built and documented but never actually registered as a runnable command | ✅ Released |
+| v2.10 | Streaming the agent module's final answer after the tool-call loop resolves | 🔜 Planned |
 
 ---
 

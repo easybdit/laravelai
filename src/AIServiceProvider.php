@@ -37,6 +37,11 @@ class AIServiceProvider extends ServiceProvider
 
             $this->commands([
                 \EasyAI\LaravelAI\Console\InstallCommand::class,
+                \EasyAI\LaravelAI\Console\MakeAdminCommand::class,
+                // ai:rag:ingest was fully implemented and documented in the
+                // README but never actually registered anywhere — it
+                // silently didn't exist as a real artisan command until now.
+                \EasyAI\LaravelAI\Console\RagIngestCommand::class,
             ]);
         }
     }

@@ -2,6 +2,7 @@
 
 namespace EasyAI\LaravelAI\Chat\Controllers;
 
+use EasyAI\LaravelAI\Chat\Models\AiAdmin;
 use EasyAI\LaravelAI\Chat\Models\AiSetting;
 use EasyAI\LaravelAI\Chat\Support\SettingsOverlay;
 use EasyAI\LaravelAI\Facades\AI;
@@ -63,8 +64,51 @@ class SettingsController extends Controller
                 'secretFields'    => self::SECRET_FIELDS,
                 'defaultProvider' => config('ai.default'),
                 'status'          => $request->session()->get('status'),
+                'admins'          => $this->adminsWithEmail(),
+                'currentUserId'   => (int) $request->user()->getAuthIdentifier(),
             ])
             ->header('Cache-Control', 'no-store, private');
+    }
+
+    /**
+     * Grants access to /ai-chat/settings to another user by email — the
+     * scalable path once at least one admin already exists (the very
+     * first one has to come from `php artisan laravelai:make-admin`,
+     * since this UI is itself gated by that same admin check).
+     */
+    public function addAdmin(Request $request)
+    {
+        $this->authorize($request);
+        $request->validate(['email' => 'required|email']);
+
+        $user = $this->userModel()::where('email', $request->input('email'))->first();
+
+        if (!$user) {
+            return redirect()->route('ai-chat.settings.edit')
+                ->with('status', "No user found with that email — they need to register in your app first.");
+        }
+
+        AiAdmin::firstOrCreate(['user_id' => $user->getAuthIdentifier()]);
+
+        return redirect()->route('ai-chat.settings.edit')
+            ->with('status', "{$request->input('email')} can now manage AI settings.");
+    }
+
+    public function removeAdmin(Request $request, AiAdmin $admin)
+    {
+        $this->authorize($request);
+
+        // Never let this page remove its own last remaining admin — that's
+        // a self-inflicted lockout with no UI path back in, only another
+        // trip to `php artisan laravelai:make-admin`.
+        if (AiAdmin::count() <= 1) {
+            return redirect()->route('ai-chat.settings.edit')
+                ->with('status', "Can't remove the last admin — add another admin first.");
+        }
+
+        $admin->delete();
+
+        return redirect()->route('ai-chat.settings.edit')->with('status', 'Admin access removed.');
     }
 
     public function update(Request $request)
@@ -148,5 +192,33 @@ class SettingsController extends Controller
             'gemini'    => 'Google Gemini',
             'together'  => 'Together AI',
         ];
+    }
+
+    /**
+     * The host app's own User model class — resolved dynamically via
+     * Laravel's own standard auth config rather than assuming \App\Models\User,
+     * since this package has no way to know that for certain.
+     */
+    private function userModel(): string
+    {
+        return config('auth.providers.users.model', \App\Models\User::class);
+    }
+
+    /**
+     * @return array<int, array{id: int, user_id: int, email: string}>
+     */
+    private function adminsWithEmail(): array
+    {
+        $model = $this->userModel();
+
+        return AiAdmin::orderBy('id')->get()->map(function (AiAdmin $admin) use ($model) {
+            $user = class_exists($model) ? $model::find($admin->user_id) : null;
+
+            return [
+                'id'      => $admin->id,
+                'user_id' => (int) $admin->user_id,
+                'email'   => $user->email ?? "user #{$admin->user_id} (account not found)",
+            ];
+        })->all();
     }
 }

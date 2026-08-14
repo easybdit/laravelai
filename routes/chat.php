@@ -18,6 +18,8 @@ Route::prefix('ai-chat')->name('ai-chat.')->group(function () {
     Route::get('/settings',  [SettingsController::class, 'edit'])->name('settings.edit');
     Route::post('/settings', [SettingsController::class, 'update'])->name('settings.update');
     Route::post('/settings/test', [SettingsController::class, 'test'])->name('settings.test');
+    Route::post('/settings/admins', [SettingsController::class, 'addAdmin'])->name('settings.admins.add');
+    Route::delete('/settings/admins/{admin}', [SettingsController::class, 'removeAdmin'])->name('settings.admins.remove');
 
     Route::prefix('api')->group(function () {
 
