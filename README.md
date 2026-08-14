@@ -34,8 +34,7 @@
   <a href="#-agent-module--tool--function-calling">Agent &amp; Tools</a> •
   <a href="#-api-reference">API Reference</a> •
   <a href="#%EF%B8%8F-configuration">Configuration</a> •
-  <a href="#-troubleshooting">Troubleshooting</a> •
-  <a href="#-বাংলা-গাইড-bangla-guide">বাংলা গাইড</a>
+  <a href="#-troubleshooting">Troubleshooting</a>
 </p>
 
 <p align="center">
@@ -45,8 +44,7 @@
 </p>
 
 <p align="center">
-  <sub>🔌 Not a Laravel site? The same chat, self-hosted on <strong>WordPress</strong>: <a href="https://wordpress.org/plugins/easyit-ai-chat/">EasyIT AI Chat plugin</a> — free, no Pro tier.</sub><br>
-  <sub>🌐 এই ডকুমেন্টেশন বাংলায় পড়তে চান? নিচে <a href="#-বাংলা-গাইড-bangla-guide">বাংলা গাইড</a> দেখুন, অথবা এই পেজটি যেকোনো ভাষায় অনুবাদ করতে আপনার ব্রাউজারের Translate ফিচার ব্যবহার করুন।</sub>
+  <sub>🔌 Not a Laravel site? The same chat, self-hosted on <strong>WordPress</strong>: <a href="https://wordpress.org/plugins/easyit-ai-chat/">EasyIT AI Chat plugin</a> — free, no Pro tier.</sub>
 </p>
 
 ---
@@ -206,46 +204,6 @@ php artisan tinker
 >>> ai('Say hello in 3 words')
 => "Hello there, friend!"
 ```
-
----
-
-## 🇧🇩 বাংলা গাইড (Bangla Guide)
-
-> সম্পূর্ণ ডকুমেন্টেশন ইংরেজিতে লেখা — এই অংশটি শুধু দ্রুত শুরু করার জন্য একটি সংক্ষিপ্ত বাংলা গাইড। নিচের বাটনে ক্লিক করলে পুরো পেজটি গুগল ট্রান্সলেট দিয়ে যেকোনো ভাষায় (বাংলা সহ) অনুবাদ করে দেখতে পারবেন।
-
-<p>
-  <a href="https://translate.google.com/translate?sl=en&tl=bn&u=https://github.com/easybdit/laraveleasyai">
-    <img src="https://img.shields.io/badge/Google%20Translate-পুরো%20পেজ%20বাংলায়%20পড়ুন-4285F4?style=for-the-badge&logo=googletranslate&logoColor=white" alt="Translate this page to Bangla">
-  </a>
-</p>
-
-**LaravelAI কী?** একটি Laravel প্যাকেজ, যা দিয়ে আপনি এক জায়গা থেকেই Ollama (নিজের সার্ভারে ফ্রি), OpenAI (ChatGPT), Anthropic (Claude), DeepSeek, Gemini — যেকোনো AI ব্যবহার করতে পারবেন, কোড না বদলিয়েই। সাথে রেডি-মেড একটি চ্যাট UI (`/ai-chat`) থাকে, যা সরাসরি ইনস্টল করেই ব্যবহার করা যায়।
-
-**ইনস্টলেশন (মাত্র ২ ধাপ):**
-
-```bash
-# ধাপ ১: কম্পোজার দিয়ে ইনস্টল করুন
-composer require easybdit/laraveleasyai
-
-# ধাপ ২: গাইডেড ইনস্টলার চালান — কনফিগ/অ্যাসেট পাবলিশ, মাইগ্রেশন, এবং
-# প্রোভাইডার সিলেকশন সব একসাথে, ইন্টারেক্টিভভাবে
-php artisan laravelai:install
-```
-
-এরপর ব্রাউজারে `/ai-chat` ভিজিট করুন — ব্যস, চ্যাট রেডি ✅
-
-**কোড দিয়ে ব্যবহার করতে চাইলে:**
-
-```php
-use EasyAI\LaravelAI\Facades\AI;
-
-$response = AI::chat([['role' => 'user', 'content' => 'লারাভেল কী?']]);
-echo $response->content;
-```
-
-**সমস্যায় পড়লে** — উপরের [Troubleshooting](#-troubleshooting) অংশে দুইটা সবচেয়ে বেশি হওয়া সমস্যার আসল উদাহরণ ও সমাধান দেওয়া আছে (দীর্ঘ রিপ্লাই রিলোডে হারিয়ে যাওয়া, আর `/ai-chat` রুট কাজ না করা)।
-
-**WordPress ব্যবহার করেন, Laravel না?** — একই চ্যাট সিস্টেম WordPress প্লাগইন হিসেবেও ফ্রি পাওয়া যায়: **[EasyIT AI Chat](https://wordpress.org/plugins/easyit-ai-chat/)**।
 
 ---
 
