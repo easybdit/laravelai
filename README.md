@@ -511,11 +511,13 @@ AI_CHAT_MIDDLEWARE=auth   # require login for the whole /ai-chat area; leave uns
 
 ### 📊 Usage & Cost Tracking
 
-A "Usage & Costs" tab lives right next to "Providers" on the same Settings page — off by default, one checkbox to turn on:
+A "Usage & Costs" tab lives right next to "Providers" on the same Settings page — off by default, flip it on from `.env` **or** with the checkbox right there on the tab itself (saved through the same `SettingsOverlay` as everything else):
 
 ```env
 AI_USAGE_LOGGING_ENABLED=true
 ```
+
+Upgrading from an older version? This adds one new table — run `php artisan migrate` first. The tab itself still renders even before you have (with a short "run migrate" hint instead of blank stats), so nothing breaks if you flip the checkbox on ahead of it.
 
 Once on, every `chat()`/`generateImage()` call this package's drivers make — from the bundled chat UI *and* from your own PHP code calling `AI::provider(...)` directly — appends a row to `ai_usage_logs`: provider, model, chat vs. image, token/image counts, and an estimated USD cost. The tab shows total spend (all-time and this month), a breakdown by provider, and the most recent calls.
 
@@ -1413,8 +1415,8 @@ Either way, the sidebar's identity line will pick up the resolved identity autom
 | v2.9 | Fix — `ai:rag:ingest` was fully built and documented but never actually registered as a runnable command | ✅ Released |
 | v2.9.1 | Fix — `chat_sessions`/`chat_messages`/`chat_attachments` renamed to `ai_chat_*` for namespace-collision safety, verified live against real MySQL data | ✅ Released |
 | v2.10 | Together AI's `image_enabled`/model/size/steps fields exposed in the Settings UI, not just `.env` | ✅ Released |
-| v2.10.1 | Fix — Together's default image model (`FLUX.1-schnell-Free`) 400s on every account; the promotional endpoint isn't live on Together's Serverless API yet | 🔜 Pending merge |
-| v2.11 | Persisted usage & cost tracking (`ai_usage_logs`) — a "Usage & Costs" tab on the Settings page, covering every provider's chat *and* image calls | 🔜 Pending merge |
+| v2.10.1 | Fix — Together's default image model (`FLUX.1-schnell-Free`) 400s on every account; the promotional endpoint isn't live on Together's Serverless API yet | ✅ Released |
+| v2.11 | Persisted usage & cost tracking (`ai_usage_logs`) — a "Usage & Costs" tab on the Settings page, covering every provider's chat *and* image calls | ✅ Released |
 | v2.12 | Streaming the agent module's final answer after the tool-call loop resolves | 🔜 Planned |
 
 ---
