@@ -34,8 +34,7 @@
   <a href="#-agent-module--tool--function-calling">Agent &amp; Tools</a> •
   <a href="#-api-reference">API Reference</a> •
   <a href="#%EF%B8%8F-configuration">Configuration</a> •
-  <a href="#-troubleshooting">Troubleshooting</a> •
-  <a href="#-বাংলা-গাইড-bangla-guide">বাংলা গাইড</a>
+  <a href="#-troubleshooting">Troubleshooting</a>
 </p>
 
 <p align="center">
@@ -45,8 +44,7 @@
 </p>
 
 <p align="center">
-  <sub>🔌 Not a Laravel site? The same chat, self-hosted on <strong>WordPress</strong>: <a href="https://wordpress.org/plugins/easyit-ai-chat/">EasyIT AI Chat plugin</a> — free, no Pro tier.</sub><br>
-  <sub>🌐 এই ডকুমেন্টেশন বাংলায় পড়তে চান? নিচে <a href="#-বাংলা-গাইড-bangla-guide">বাংলা গাইড</a> দেখুন, অথবা এই পেজটি যেকোনো ভাষায় অনুবাদ করতে আপনার ব্রাউজারের Translate ফিচার ব্যবহার করুন।</sub>
+  <sub>🔌 Not a Laravel site? The same chat, self-hosted on <strong>WordPress</strong>: <a href="https://wordpress.org/plugins/easyit-ai-chat/">EasyIT AI Chat plugin</a> — free, no Pro tier.</sub>
 </p>
 
 ---
@@ -95,24 +93,17 @@ $response = AI::provider('deepseek')->chat($messages);  // DeepSeek
 
 Built on **Laravel's driver pattern** — same architecture as Mail, Cache, and Queue.
 
-### How this compares to Laravel's own `laravel/ai` SDK
+### What you get, all in one package
 
-They solve a narrower problem well — a clean SDK for OpenAI/Anthropic/Gemini. LaravelAI is aimed at *"I want AI running in my app today,"* including the parts an SDK alone doesn't give you:
+- **8 providers, one interface** — Ollama (free, self-hosted), OpenAI, Anthropic, DeepSeek, Groq, Gemini, Together AI, and any custom OpenAI-compatible endpoint. Switch providers by changing one string, never your calling code.
+- **A ready-made chat UI** — `/ai-chat` is live the moment you install it. No frontend to build.
+- **RAG built in** — ingestion, search, and a pluggable vector store (`pgvector` included), no separate vector-database service to stand up first.
+- **Tool-calling and structured output**, working the same way across every provider above — including Anthropic, which has no native JSON mode, handled transparently via a forced tool call under the hood.
+- **Response caching and automatic retry with backoff**, both opt-in, one `.env` flag each.
+- **Conversation export** to PDF, Word, and PowerPoint, built in.
+- **PHP 8.1+, Laravel 10–13** — and free to try right now: point `AI_PROVIDER=ollama` at a local model, no API key needed.
 
-| | **LaravelAI** (this package) | `laravel/ai` (official SDK) |
-|---|---|---|
-| Providers | 8 — Ollama, OpenAI, Anthropic, DeepSeek, Groq, Gemini, Together AI, + any custom OpenAI-compatible endpoint | 3 — OpenAI, Anthropic, Gemini |
-| Free, self-hosted option | ✅ Ollama — no API key, no bill, runs on your own hardware | ❌ every provider is a paid API |
-| Ready-made chat UI | ✅ `/ai-chat`, install and it's live — no frontend to build | ❌ SDK only, bring your own UI |
-| RAG / knowledge base | ✅ built-in ingestion + search, pluggable vector store (`pgvector` included) | ❌ not included |
-| Tool/function calling | ✅ one `Tool` shape, works the same across every provider above | ✅ provider-specific |
-| Structured output | ✅ one `->format($schema)` call, works the same across every provider above (including Anthropic, via a forced tool call) | ✅ |
-| Response caching | ✅ one `.env` flag, works across all providers | — |
-| Conversation export | ✅ PDF / Word / PowerPoint, built in | ❌ |
-| PHP / Laravel support | PHP 8.1+, Laravel 10–13 | PHP 8.3+ |
-| Cost to try it right now | $0 — point `AI_PROVIDER=ollama` at a local model | needs a paid provider key first |
-
-**Three real scenarios where that difference shows up:**
+**Three real scenarios where that adds up:**
 
 **1. You want to try AI in your app without spending anything or waiting on an API key.**
 ```bash
@@ -213,46 +204,6 @@ php artisan tinker
 >>> ai('Say hello in 3 words')
 => "Hello there, friend!"
 ```
-
----
-
-## 🇧🇩 বাংলা গাইড (Bangla Guide)
-
-> সম্পূর্ণ ডকুমেন্টেশন ইংরেজিতে লেখা — এই অংশটি শুধু দ্রুত শুরু করার জন্য একটি সংক্ষিপ্ত বাংলা গাইড। নিচের বাটনে ক্লিক করলে পুরো পেজটি গুগল ট্রান্সলেট দিয়ে যেকোনো ভাষায় (বাংলা সহ) অনুবাদ করে দেখতে পারবেন।
-
-<p>
-  <a href="https://translate.google.com/translate?sl=en&tl=bn&u=https://github.com/easybdit/laraveleasyai">
-    <img src="https://img.shields.io/badge/Google%20Translate-পুরো%20পেজ%20বাংলায়%20পড়ুন-4285F4?style=for-the-badge&logo=googletranslate&logoColor=white" alt="Translate this page to Bangla">
-  </a>
-</p>
-
-**LaravelAI কী?** একটি Laravel প্যাকেজ, যা দিয়ে আপনি এক জায়গা থেকেই Ollama (নিজের সার্ভারে ফ্রি), OpenAI (ChatGPT), Anthropic (Claude), DeepSeek, Gemini — যেকোনো AI ব্যবহার করতে পারবেন, কোড না বদলিয়েই। সাথে রেডি-মেড একটি চ্যাট UI (`/ai-chat`) থাকে, যা সরাসরি ইনস্টল করেই ব্যবহার করা যায়।
-
-**ইনস্টলেশন (মাত্র ২ ধাপ):**
-
-```bash
-# ধাপ ১: কম্পোজার দিয়ে ইনস্টল করুন
-composer require easybdit/laraveleasyai
-
-# ধাপ ২: গাইডেড ইনস্টলার চালান — কনফিগ/অ্যাসেট পাবলিশ, মাইগ্রেশন, এবং
-# প্রোভাইডার সিলেকশন সব একসাথে, ইন্টারেক্টিভভাবে
-php artisan laravelai:install
-```
-
-এরপর ব্রাউজারে `/ai-chat` ভিজিট করুন — ব্যস, চ্যাট রেডি ✅
-
-**কোড দিয়ে ব্যবহার করতে চাইলে:**
-
-```php
-use EasyAI\LaravelAI\Facades\AI;
-
-$response = AI::chat([['role' => 'user', 'content' => 'লারাভেল কী?']]);
-echo $response->content;
-```
-
-**সমস্যায় পড়লে** — উপরের [Troubleshooting](#-troubleshooting) অংশে দুইটা সবচেয়ে বেশি হওয়া সমস্যার আসল উদাহরণ ও সমাধান দেওয়া আছে (দীর্ঘ রিপ্লাই রিলোডে হারিয়ে যাওয়া, আর `/ai-chat` রুট কাজ না করা)।
-
-**WordPress ব্যবহার করেন, Laravel না?** — একই চ্যাট সিস্টেম WordPress প্লাগইন হিসেবেও ফ্রি পাওয়া যায়: **[EasyIT AI Chat](https://wordpress.org/plugins/easyit-ai-chat/)**।
 
 ---
 
