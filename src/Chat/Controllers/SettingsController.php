@@ -26,10 +26,15 @@ class SettingsController extends Controller
         'anthropic' => ['api_key', 'model', 'timeout'],
         'deepseek'  => ['api_key', 'model', 'timeout'],
         'gemini'    => ['api_key', 'model', 'timeout'],
-        'together'  => ['api_key', 'model', 'timeout'],
+        'together'  => ['api_key', 'model', 'timeout', 'image_enabled', 'image_model', 'image_size', 'image_steps'],
     ];
 
     private const SECRET_FIELDS = ['api_key'];
+
+    /** Rendered as a checkbox and always present in the submitted form (via a paired hidden input), so unchecking one truly saves "off". */
+    private const BOOLEAN_FIELDS = ['image_enabled'];
+
+    private const INTEGER_FIELDS = ['timeout', 'image_steps'];
 
     private const MASK = '••••••••••••';
 
@@ -62,6 +67,7 @@ class SettingsController extends Controller
                 'providers'       => $providers,
                 'providerLabels'  => $this->providerLabels(),
                 'secretFields'    => self::SECRET_FIELDS,
+                'booleanFields'   => self::BOOLEAN_FIELDS,
                 'defaultProvider' => config('ai.default'),
                 'status'          => $request->session()->get('status'),
                 'admins'          => $this->adminsWithEmail(),
@@ -134,12 +140,21 @@ class SettingsController extends Controller
                 }
 
                 $key = "ai.providers.{$name}.{$field}";
-                if ($input === '') {
-                    AiSetting::where('key', $key)->delete(); // blank = fall back to config()/.env again
+                $isBoolean = in_array($field, self::BOOLEAN_FIELDS, true);
+
+                // Blank = fall back to config()/.env again — except a boolean
+                // checkbox, which is always submitted (paired hidden input)
+                // and whose "off" state ('0') must be saved, not treated as blank.
+                if ($input === '' && !$isBoolean) {
+                    AiSetting::where('key', $key)->delete();
                     continue;
                 }
 
-                $castField = in_array($field, ['timeout'], true) ? (int) $input : $input;
+                $castField = match (true) {
+                    $isBoolean => $input === '1',
+                    in_array($field, self::INTEGER_FIELDS, true) => (int) $input,
+                    default => $input,
+                };
                 $this->save($key, $castField);
             }
         }

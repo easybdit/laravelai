@@ -108,12 +108,24 @@
                 @foreach($fields as $field => $value)
                     <div class="field-row">
                         <label>{{ ucfirst(str_replace('_', ' ', $field)) }}</label>
-                        <input
-                            type="{{ in_array($field, $secretFields) ? 'password' : 'text' }}"
-                            name="providers[{{ $name }}][{{ $field }}]"
-                            value="{{ $value }}"
-                            placeholder="{{ in_array($field, $secretFields) ? '(unchanged if left as-is)' : '' }}"
-                            autocomplete="off">
+                        @if(in_array($field, $booleanFields))
+                            <div>
+                                <input type="hidden" name="providers[{{ $name }}][{{ $field }}]" value="0">
+                                <input
+                                    type="checkbox"
+                                    name="providers[{{ $name }}][{{ $field }}]"
+                                    value="1"
+                                    {{ $value ? 'checked' : '' }}
+                                    style="width:auto;">
+                            </div>
+                        @else
+                            <input
+                                type="{{ in_array($field, $secretFields) ? 'password' : 'text' }}"
+                                name="providers[{{ $name }}][{{ $field }}]"
+                                value="{{ $value }}"
+                                placeholder="{{ in_array($field, $secretFields) ? '(unchanged if left as-is)' : '' }}"
+                                autocomplete="off">
+                        @endif
                     </div>
                 @endforeach
 
