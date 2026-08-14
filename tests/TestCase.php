@@ -61,22 +61,40 @@ abstract class TestCase extends BaseTestCase
     }
 
     /**
-     * Local `vendor/bin/phpunit` (and any environment that never sets
-     * DB_CONNECTION) keeps today's exact behavior — Testbench's own
-     * default sqlite `:memory:` connection, completely untouched by this
-     * method. CI's mysql/pgsql matrix legs (.github/workflows/tests.yml,
-     * v2.7.0) set DB_CONNECTION/DB_HOST/DB_PORT/DB_DATABASE/DB_USERNAME/
-     * DB_PASSWORD to point the whole suite at a real service-container
-     * database instead, so driver-specific migration/query code (e.g. the
-     * MySQL-specific ALTER…MODIFY in
-     * 2026_08_14_000003_add_queued_status_to_project_files.php) actually
-     * gets exercised somewhere in CI, not just SQLite.
+     * No-DB_CONNECTION-set environments (plain `vendor/bin/phpunit`, and
+     * CI's PHP-version matrix legs) get an explicit in-memory sqlite
+     * connection here rather than trusting Testbench's own built-in
+     * default to already be sqlite — confirmed, while chasing a real CI
+     * failure, that this assumption is version-dependent and false for
+     * orchestra/testbench 8.x specifically: its own skeleton
+     * config/database.php defaults to `env('DB_CONNECTION', 'mysql')`,
+     * not sqlite (a real convention difference from newer testbench/
+     * Laravel versions' sqlite-by-default skeleton). Every test using this
+     * TestCase previously worked purely because every testbench version
+     * tested so far happened to default to sqlite already — the moment a
+     * testbench 8.x/Laravel 10.x CI leg existed, every test touching the
+     * database failed with a real "connection refused" against a mysql
+     * server that was never started, since nothing here was actually
+     * forcing sqlite. CI's mysql/pgsql matrix legs
+     * (.github/workflows/tests.yml, v2.7.0) still set DB_CONNECTION/
+     * DB_HOST/DB_PORT/DB_DATABASE/DB_USERNAME/DB_PASSWORD to point the
+     * whole suite at a real service-container database instead, so
+     * driver-specific migration/query code (e.g. the MySQL-specific
+     * ALTER…MODIFY in 2026_08_14_000003_add_queued_status_to_project_files.php)
+     * actually gets exercised somewhere in CI, not just SQLite.
      */
     private function configureDatabase($app): void
     {
         $driver = env('DB_CONNECTION', 'sqlite');
 
         if ($driver === 'sqlite') {
+            $app['config']->set('database.default', 'sqlite');
+            $app['config']->set('database.connections.sqlite', [
+                'driver'                  => 'sqlite',
+                'database'                => ':memory:',
+                'prefix'                  => '',
+                'foreign_key_constraints' => true,
+            ]);
             return;
         }
 
