@@ -95,24 +95,17 @@ $response = AI::provider('deepseek')->chat($messages);  // DeepSeek
 
 Built on **Laravel's driver pattern** — same architecture as Mail, Cache, and Queue.
 
-### How this compares to Laravel's own `laravel/ai` SDK
+### What you get, all in one package
 
-They solve a narrower problem well — a clean SDK for OpenAI/Anthropic/Gemini. LaravelAI is aimed at *"I want AI running in my app today,"* including the parts an SDK alone doesn't give you:
+- **8 providers, one interface** — Ollama (free, self-hosted), OpenAI, Anthropic, DeepSeek, Groq, Gemini, Together AI, and any custom OpenAI-compatible endpoint. Switch providers by changing one string, never your calling code.
+- **A ready-made chat UI** — `/ai-chat` is live the moment you install it. No frontend to build.
+- **RAG built in** — ingestion, search, and a pluggable vector store (`pgvector` included), no separate vector-database service to stand up first.
+- **Tool-calling and structured output**, working the same way across every provider above — including Anthropic, which has no native JSON mode, handled transparently via a forced tool call under the hood.
+- **Response caching and automatic retry with backoff**, both opt-in, one `.env` flag each.
+- **Conversation export** to PDF, Word, and PowerPoint, built in.
+- **PHP 8.1+, Laravel 10–13** — and free to try right now: point `AI_PROVIDER=ollama` at a local model, no API key needed.
 
-| | **LaravelAI** (this package) | `laravel/ai` (official SDK) |
-|---|---|---|
-| Providers | 8 — Ollama, OpenAI, Anthropic, DeepSeek, Groq, Gemini, Together AI, + any custom OpenAI-compatible endpoint | 3 — OpenAI, Anthropic, Gemini |
-| Free, self-hosted option | ✅ Ollama — no API key, no bill, runs on your own hardware | ❌ every provider is a paid API |
-| Ready-made chat UI | ✅ `/ai-chat`, install and it's live — no frontend to build | ❌ SDK only, bring your own UI |
-| RAG / knowledge base | ✅ built-in ingestion + search, pluggable vector store (`pgvector` included) | ❌ not included |
-| Tool/function calling | ✅ one `Tool` shape, works the same across every provider above | ✅ provider-specific |
-| Structured output | ✅ one `->format($schema)` call, works the same across every provider above (including Anthropic, via a forced tool call) | ✅ |
-| Response caching | ✅ one `.env` flag, works across all providers | — |
-| Conversation export | ✅ PDF / Word / PowerPoint, built in | ❌ |
-| PHP / Laravel support | PHP 8.1+, Laravel 10–13 | PHP 8.3+ |
-| Cost to try it right now | $0 — point `AI_PROVIDER=ollama` at a local model | needs a paid provider key first |
-
-**Three real scenarios where that difference shows up:**
+**Three real scenarios where that adds up:**
 
 **1. You want to try AI in your app without spending anything or waiting on an API key.**
 ```bash
