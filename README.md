@@ -509,6 +509,31 @@ Secrets are masked in the UI (last 4 characters only) and never overwritten unle
 AI_CHAT_MIDDLEWARE=auth   # require login for the whole /ai-chat area; leave unset for a public page
 ```
 
+### 📊 Usage & Cost Tracking
+
+A "Usage & Costs" tab lives right next to "Providers" on the same Settings page — off by default, one checkbox to turn on:
+
+```env
+AI_USAGE_LOGGING_ENABLED=true
+```
+
+Once on, every `chat()`/`generateImage()` call this package's drivers make — from the bundled chat UI *and* from your own PHP code calling `AI::provider(...)` directly — appends a row to `ai_usage_logs`: provider, model, chat vs. image, token/image counts, and an estimated USD cost. The tab shows total spend (all-time and this month), a breakdown by provider, and the most recent calls.
+
+Cost estimation reuses the same `config('ai.pricing')` rates as [`getEstimatedCost()`](#cost-estimation) — empty by default, so cost shows as "—" until you fill in a rate for the exact model you're using. Image generation adds a second rate shape under each provider's `image` key:
+
+```php
+'pricing' => [
+    'openai' => [
+        'image' => ['dall-e-3' => 0.04],              // flat USD per image
+    ],
+    'together' => [
+        'image' => ['black-forest-labs/FLUX.1-schnell' => ['per_mp' => 0.0027]], // USD per megapixel
+    ],
+],
+```
+
+Same fail-safe posture as everything else on this page: no rate configured just means that row's cost shows as unconfigured, never a guessed number, and a logging problem (migration not yet run, DB briefly down) is swallowed rather than breaking the AI call it rode in on.
+
 ## 💬 Chat UX & Personalization
 
 > **New in v2.0.0**
@@ -985,6 +1010,8 @@ $response = AI::provider('openai')->model('gpt-4o-mini')->chat($messages);
 $response->getEstimatedCost(); // 0.0007 (float, USD) — or null if that exact provider/model pair has no configured rate
 ```
 
+Want that cost persisted and totaled up somewhere, instead of read off one response at a time? See [Usage & Cost Tracking](#-usage--cost-tracking) — same `pricing` config, plus a dashboard.
+
 ### Structured Output
 
 `->format()` gets the model to return actual data instead of prose — every provider, one call site. `'json'` asks for "valid JSON, no shape enforced"; a JSON Schema array additionally constrains the exact fields.
@@ -1385,7 +1412,10 @@ Either way, the sidebar's identity line will pick up the resolved identity autom
 | v2.9 | Scalable Settings-page admin access — `laravelai:make-admin`, an "Admin Access" UI panel, no hand-written Gate required | ✅ Released |
 | v2.9 | Fix — `ai:rag:ingest` was fully built and documented but never actually registered as a runnable command | ✅ Released |
 | v2.9.1 | Fix — `chat_sessions`/`chat_messages`/`chat_attachments` renamed to `ai_chat_*` for namespace-collision safety, verified live against real MySQL data | ✅ Released |
-| v2.10 | Streaming the agent module's final answer after the tool-call loop resolves | 🔜 Planned |
+| v2.10 | Together AI's `image_enabled`/model/size/steps fields exposed in the Settings UI, not just `.env` | ✅ Released |
+| v2.10.1 | Fix — Together's default image model (`FLUX.1-schnell-Free`) 400s on every account; the promotional endpoint isn't live on Together's Serverless API yet | 🔜 Pending merge |
+| v2.11 | Persisted usage & cost tracking (`ai_usage_logs`) — a "Usage & Costs" tab on the Settings page, covering every provider's chat *and* image calls | 🔜 Pending merge |
+| v2.12 | Streaming the agent module's final answer after the tool-call loop resolves | 🔜 Planned |
 
 ---
 

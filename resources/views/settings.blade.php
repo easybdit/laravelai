@@ -40,6 +40,22 @@
         .remove-btn:hover { text-decoration: underline; }
         .add-admin-form { display: flex; gap: 8px; margin-top: 12px; }
         .add-admin-form input { flex: 1; padding: 7px 10px; border: 1px solid #e0dced; border-radius: 8px; font-size: 0.85rem; font-family: inherit; }
+        .tabs { display: flex; gap: 4px; margin-bottom: 20px; border-bottom: 1px solid #e8eaef; }
+        .tab-btn { background: none; border: none; padding: 10px 16px; font-size: 0.85rem; font-weight: 600; color: #6b7280; cursor: pointer; border-bottom: 2px solid transparent; margin-bottom: -1px; }
+        .tab-btn.active { color: #4f46e5; border-bottom-color: #6366f1; }
+        .tab-panel.hidden { display: none; }
+        .stat-row { display: flex; gap: 12px; margin-bottom: 16px; flex-wrap: wrap; }
+        .stat-tile { flex: 1; min-width: 130px; background: #f8f8fc; border: 1px solid #eceafc; border-radius: 10px; padding: 12px 14px; }
+        .stat-tile .label { font-size: 0.72rem; color: #6b7280; margin-bottom: 4px; }
+        .stat-tile .value { font-size: 1.15rem; font-weight: 700; color: #1a1d27; }
+        .usage-table { width: 100%; border-collapse: collapse; font-size: 0.8rem; }
+        .usage-table th { text-align: left; color: #6b7280; font-weight: 600; padding: 6px 8px; border-bottom: 1px solid #eceafc; }
+        .usage-table td { padding: 6px 8px; border-bottom: 1px solid #f4f4f8; }
+        .usage-table tbody tr:last-child td { border-bottom: none; }
+        .kind-badge { font-size: 0.65rem; font-weight: 600; padding: 1px 7px; border-radius: 20px; background: #eef2ff; color: #4f46e5; }
+        .table-scroll { overflow-x: auto; }
+        .toggle-row { display: flex; align-items: center; gap: 8px; margin-bottom: 16px; }
+        .toggle-row input[type=checkbox] { width: auto; }
     </style>
 </head>
 <body>
@@ -86,55 +102,135 @@
         </form>
     </div>
 
+    <div class="tabs">
+        <button type="button" class="tab-btn active" data-tab="providers" onclick="showTab('providers')">⚙️ Providers</button>
+        <button type="button" class="tab-btn" data-tab="usage" onclick="showTab('usage')">📊 Usage &amp; Costs</button>
+    </div>
+
     <form method="POST" action="{{ route('ai-chat.settings.update') }}">
         @csrf
 
-        <div class="top-controls">
-            <label for="default_provider" style="font-size:0.85rem;color:#6b7280;">Default provider</label>
-            <select name="default_provider" id="default_provider">
-                @foreach($providerLabels as $key => $label)
-                    <option value="{{ $key }}" {{ $defaultProvider === $key ? 'selected' : '' }}>{{ $label }}</option>
-                @endforeach
-            </select>
+        <div id="tab-providers" class="tab-panel">
+            <div class="top-controls">
+                <label for="default_provider" style="font-size:0.85rem;color:#6b7280;">Default provider</label>
+                <select name="default_provider" id="default_provider">
+                    @foreach($providerLabels as $key => $label)
+                        <option value="{{ $key }}" {{ $defaultProvider === $key ? 'selected' : '' }}>{{ $label }}</option>
+                    @endforeach
+                </select>
+            </div>
+
+            @foreach($providers as $name => $fields)
+                <div class="card">
+                    <h2>
+                        {{ $providerLabels[$name] }}
+                        @if($defaultProvider === $name)<span class="default-badge">DEFAULT</span>@endif
+                    </h2>
+
+                    @foreach($fields as $field => $value)
+                        <div class="field-row">
+                            <label>{{ ucfirst(str_replace('_', ' ', $field)) }}</label>
+                            @if(in_array($field, $booleanFields))
+                                <div>
+                                    <input type="hidden" name="providers[{{ $name }}][{{ $field }}]" value="0">
+                                    <input
+                                        type="checkbox"
+                                        name="providers[{{ $name }}][{{ $field }}]"
+                                        value="1"
+                                        {{ $value ? 'checked' : '' }}
+                                        style="width:auto;">
+                                </div>
+                            @else
+                                <input
+                                    type="{{ in_array($field, $secretFields) ? 'password' : 'text' }}"
+                                    name="providers[{{ $name }}][{{ $field }}]"
+                                    value="{{ $value }}"
+                                    placeholder="{{ in_array($field, $secretFields) ? '(unchanged if left as-is)' : '' }}"
+                                    autocomplete="off">
+                            @endif
+                        </div>
+                    @endforeach
+
+                    <div class="card-actions">
+                        <button type="button" class="test-btn" onclick="testProvider('{{ $name }}', this)">Test connection</button>
+                        <span class="test-result" id="test-{{ $name }}"></span>
+                    </div>
+                </div>
+            @endforeach
         </div>
 
-        @foreach($providers as $name => $fields)
+        <div id="tab-usage" class="tab-panel hidden">
             <div class="card">
-                <h2>
-                    {{ $providerLabels[$name] }}
-                    @if($defaultProvider === $name)<span class="default-badge">DEFAULT</span>@endif
-                </h2>
+                <h2>📊 Usage &amp; Cost Tracking</h2>
+                <p class="hint" style="margin-top:0;">Logs every chat and image call this package's drivers make — provider, model, tokens/images, and an estimated USD cost (only where you've filled in a rate under <code>config('ai.pricing')</code>). Off by default; nothing is written until you turn it on.</p>
 
-                @foreach($fields as $field => $value)
-                    <div class="field-row">
-                        <label>{{ ucfirst(str_replace('_', ' ', $field)) }}</label>
-                        @if(in_array($field, $booleanFields))
-                            <div>
-                                <input type="hidden" name="providers[{{ $name }}][{{ $field }}]" value="0">
-                                <input
-                                    type="checkbox"
-                                    name="providers[{{ $name }}][{{ $field }}]"
-                                    value="1"
-                                    {{ $value ? 'checked' : '' }}
-                                    style="width:auto;">
-                            </div>
-                        @else
-                            <input
-                                type="{{ in_array($field, $secretFields) ? 'password' : 'text' }}"
-                                name="providers[{{ $name }}][{{ $field }}]"
-                                value="{{ $value }}"
-                                placeholder="{{ in_array($field, $secretFields) ? '(unchanged if left as-is)' : '' }}"
-                                autocomplete="off">
-                        @endif
-                    </div>
-                @endforeach
-
-                <div class="card-actions">
-                    <button type="button" class="test-btn" onclick="testProvider('{{ $name }}', this)">Test connection</button>
-                    <span class="test-result" id="test-{{ $name }}"></span>
+                <div class="toggle-row">
+                    <input type="hidden" name="usage_logging_enabled" value="0">
+                    <input type="checkbox" id="usage_logging_enabled" name="usage_logging_enabled" value="1" {{ $usageLoggingEnabled ? 'checked' : '' }}>
+                    <label for="usage_logging_enabled" style="font-size:0.85rem;">Enable usage &amp; cost logging</label>
                 </div>
+
+                @if(!$usage['available'])
+                    <p class="hint" style="margin-bottom:0;">⚠️ The <code>ai_usage_logs</code> table doesn't exist yet — run <code>php artisan migrate</code>, then check the box above and save.</p>
+                @else
+                    <div class="stat-row">
+                        <div class="stat-tile">
+                            <div class="label">Total estimated cost</div>
+                            <div class="value">${{ number_format($usage['total_cost'], 4) }}</div>
+                        </div>
+                        <div class="stat-tile">
+                            <div class="label">This month</div>
+                            <div class="value">${{ number_format($usage['month_cost'], 4) }}</div>
+                        </div>
+                        <div class="stat-tile">
+                            <div class="label">Logged calls</div>
+                            <div class="value">{{ number_format($usage['total_calls']) }}</div>
+                        </div>
+                    </div>
+
+                    @if(count($usage['by_provider']))
+                        <p class="hint" style="margin-top:0;">By provider &amp; kind</p>
+                        <div class="table-scroll" style="margin-bottom:16px;">
+                            <table class="usage-table">
+                                <thead><tr><th>Provider</th><th>Kind</th><th>Calls</th><th>Est. cost</th></tr></thead>
+                                <tbody>
+                                    @foreach($usage['by_provider'] as $row)
+                                        <tr>
+                                            <td>{{ $providerLabels[$row->provider] ?? $row->provider }}</td>
+                                            <td><span class="kind-badge">{{ $row->kind }}</span></td>
+                                            <td>{{ number_format($row->calls) }}</td>
+                                            <td>{{ $row->cost !== null ? '$' . number_format($row->cost, 4) : '—' }}</td>
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        </div>
+                    @endif
+
+                    @if(count($usage['recent']))
+                        <p class="hint" style="margin-top:0;">Most recent</p>
+                        <div class="table-scroll">
+                            <table class="usage-table">
+                                <thead><tr><th>When</th><th>Provider</th><th>Model</th><th>Kind</th><th>Cost</th></tr></thead>
+                                <tbody>
+                                    @foreach($usage['recent'] as $row)
+                                        <tr>
+                                            <td>{{ \Illuminate\Support\Carbon::parse($row->created_at)->diffForHumans() }}</td>
+                                            <td>{{ $providerLabels[$row->provider] ?? $row->provider }}</td>
+                                            <td>{{ $row->model }}</td>
+                                            <td><span class="kind-badge">{{ $row->kind }}</span></td>
+                                            <td>{{ $row->estimated_cost !== null ? '$' . number_format($row->estimated_cost, 4) : '—' }}</td>
+                                        </tr>
+                                    @endforeach
+                                </tbody>
+                            </table>
+                        </div>
+                    @else
+                        <p class="hint" style="margin-bottom:0;">No calls logged yet.</p>
+                    @endif
+                @endif
             </div>
-        @endforeach
+        </div>
 
         <div class="save-bar">
             <button type="submit" class="save-btn">Save settings</button>
@@ -143,6 +239,11 @@
 </div>
 
 <script>
+function showTab(name) {
+    document.querySelectorAll('.tab-panel').forEach(el => el.classList.toggle('hidden', el.id !== 'tab-' + name));
+    document.querySelectorAll('.tab-btn').forEach(el => el.classList.toggle('active', el.dataset.tab === name));
+}
+
 const CSRF = document.querySelector('meta[name=csrf-token]').content;
 async function testProvider(name, btn) {
     const result = document.getElementById('test-' + name);

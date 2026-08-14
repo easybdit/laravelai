@@ -9,6 +9,7 @@ use EasyAI\LaravelAI\Exceptions\ConnectionException;
 use EasyAI\LaravelAI\Exceptions\ProviderException;
 use EasyAI\LaravelAI\Response\AIResponse;
 use EasyAI\LaravelAI\Support\MessageFormatter;
+use EasyAI\LaravelAI\Support\UsageLogger;
 use Illuminate\Support\Facades\Http;
 
 class OpenAIDriver extends AbstractDriver
@@ -312,6 +313,10 @@ class OpenAIDriver extends AbstractDriver
             }
 
             $image = $response->json('data.0');
+
+            if (!empty($image['url']) || !empty($image['b64_json'])) {
+                UsageLogger::log($this->getProviderName(), $model, 'image', ['image_count' => 1]);
+            }
 
             if (!empty($image['url'])) {
                 return $image['url'];

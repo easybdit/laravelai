@@ -8,7 +8,9 @@ use EasyAI\LaravelAI\Chat\Support\SettingsOverlay;
 use EasyAI\LaravelAI\Facades\AI;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Gate;
+use Illuminate\Support\Facades\Schema;
 
 /**
  * Admin UI for changing provider settings without touching .env — fields
@@ -64,16 +66,76 @@ class SettingsController extends Controller
         // shared computer's back button history.
         return response()
             ->view('laravelai::settings', [
-                'providers'       => $providers,
-                'providerLabels'  => $this->providerLabels(),
-                'secretFields'    => self::SECRET_FIELDS,
-                'booleanFields'   => self::BOOLEAN_FIELDS,
-                'defaultProvider' => config('ai.default'),
-                'status'          => $request->session()->get('status'),
-                'admins'          => $this->adminsWithEmail(),
-                'currentUserId'   => (int) $request->user()->getAuthIdentifier(),
+                'providers'           => $providers,
+                'providerLabels'      => $this->providerLabels(),
+                'secretFields'        => self::SECRET_FIELDS,
+                'booleanFields'       => self::BOOLEAN_FIELDS,
+                'defaultProvider'     => config('ai.default'),
+                'status'              => $request->session()->get('status'),
+                'admins'              => $this->adminsWithEmail(),
+                'currentUserId'       => (int) $request->user()->getAuthIdentifier(),
+                'usageLoggingEnabled' => (bool) config('ai.usage_logging.enabled', false),
+                'usage'               => $this->usageStats(),
             ])
             ->header('Cache-Control', 'no-store, private');
+    }
+
+    /**
+     * Powers the Settings page's "Usage & Costs" card — reads the same
+     * ai_usage_logs table UsageLogger writes to (see its own docblock for
+     * why this queries DB::table() directly rather than an Eloquent model).
+     * Returns a harmless all-zero/empty shape (never throws, never a 500)
+     * when the migration hasn't run yet, e.g. right after a package
+     * upgrade and before `php artisan migrate`.
+     *
+     * @return array{
+     *     available: bool,
+     *     total_cost: float,
+     *     month_cost: float,
+     *     total_calls: int,
+     *     by_provider: array<int, object>,
+     *     recent: array<int, object>,
+     * }
+     */
+    private function usageStats(): array
+    {
+        $empty = [
+            'available'   => false,
+            'total_cost'  => 0.0,
+            'month_cost'  => 0.0,
+            'total_calls' => 0,
+            'by_provider' => [],
+            'recent'      => [],
+        ];
+
+        if (!Schema::hasTable('ai_usage_logs')) {
+            return $empty;
+        }
+
+        try {
+            $table = DB::table('ai_usage_logs');
+
+            return [
+                'available'   => true,
+                'total_cost'  => (float) (clone $table)->sum('estimated_cost'),
+                'month_cost'  => (float) (clone $table)->where('created_at', '>=', now()->startOfMonth())->sum('estimated_cost'),
+                'total_calls' => (int) (clone $table)->count(),
+                'by_provider' => (clone $table)
+                    ->selectRaw('provider, kind, COUNT(*) as calls, SUM(estimated_cost) as cost')
+                    ->groupBy('provider', 'kind')
+                    ->orderByDesc('cost')
+                    ->get()
+                    ->all(),
+                'recent' => (clone $table)
+                    ->orderByDesc('created_at')
+                    ->limit(20)
+                    ->get()
+                    ->all(),
+            ];
+        } catch (\Throwable) {
+            // A stats query is never worth a broken Settings page over.
+            return $empty;
+        }
     }
 
     /**
@@ -126,6 +188,11 @@ class SettingsController extends Controller
         ]);
 
         $this->save('ai.default', $request->input('default_provider'));
+
+        // Global, not per-provider — same hidden+checkbox pairing as the
+        // per-provider boolean fields (see settings.blade.php), so this is
+        // always present in the submitted form and "off" saves correctly.
+        $this->save('ai.usage_logging.enabled', $request->input('usage_logging_enabled') === '1');
 
         foreach (self::PROVIDER_FIELDS as $name => $fields) {
             foreach ($fields as $field) {

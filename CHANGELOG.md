@@ -1,5 +1,19 @@
 # Changelog
 
+## v2.11.0 — 2026-08-15
+
+### 📊 Persisted usage & cost tracking
+
+`getEstimatedCost()` (v2.8) only ever answered "what did *this one* response cost?" — nothing was stored, and it never covered image generation at all. This adds a real ledger: a new "Usage & Costs" tab right next to "Providers" on the Settings page, backed by a new `ai_usage_logs` table.
+
+Off by default (`AI_USAGE_LOGGING_ENABLED` / a checkbox on the tab itself) — a fresh install writes nothing until you turn it on. Once enabled, `UsageLogger` appends one row for every `chat()` and `generateImage()` call this package's drivers make, **package-wide, not just the bundled chat UI** — any `AI::provider(...)->chat()` call anywhere in your own code is logged the same way. Estimated cost reuses `config('ai.pricing')`, extended with a new `image` sub-key per provider supporting two rate shapes: a flat USD-per-image number (OpenAI's dall-e-3) or `['per_mp' => x]` USD-per-megapixel (Together's FLUX models, computed from the actual width×height requested). Same "null unless you've configured a real rate" contract as `getEstimatedCost()` — never a guessed number.
+
+The tab itself shows total spend (all-time and this month), a breakdown by provider/kind, and the most recent calls — reading straight off the same table, gracefully showing an "enable this" hint if the migration hasn't run yet rather than a broken page.
+
+Implementation notes: hooked into `AbstractDriver::chat()`'s single shared entry point (covers every provider, including a cache-hit correctly logging nothing — no new usage occurred), plus individually into `TogetherDriver`/`OpenAIDriver`'s `generateImage()` (image generation has no equivalent shared base). `UsageLogger` lives in `src/Support` (the core driver layer) and writes via `DB::table()` rather than an Eloquent model, deliberately keeping the core SDK from depending on the optional bundled chat UI's `src/Chat` namespace. Defensive throughout, same posture as `SettingsOverlay`: a logging failure never breaks the AI call it's piggybacking on.
+
+248/248 tests passing (8 new).
+
 ## v2.10.0 — 2026-08-15
 
 ### 🟣 Together AI image-generation settings, now editable from the admin UI
