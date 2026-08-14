@@ -520,15 +520,44 @@ return [
      * enough, and varies enough per model, that shipping a hardcoded price
      * table here would go stale and quietly misreport real spend, which is
      * worse than not estimating cost at all. AIResponse::getEstimatedCost()
-     * returns null for any provider/model with no entry here rather than
-     * guessing — check your provider's own current pricing page and fill
-     * in USD-per-1,000-tokens rates yourself, e.g.:
+     * (chat) and UsageLogger (chat + image, see 'usage_logging' below)
+     * return/store null for any provider/model with no entry here rather
+     * than guessing — check your provider's own current pricing page and
+     * fill in rates yourself:
      *
      * 'pricing' => [
      *     'openai' => [
+     *         // Chat: USD per 1,000 tokens.
      *         'gpt-4o-mini' => ['input' => 0.00015, 'output' => 0.0006],
+     *         'image' => [
+     *             // Flat USD per image (OpenAI's dall-e-3/gpt-image-* pricing).
+     *             'dall-e-3' => 0.04,
+     *         ],
+     *     ],
+     *     'together' => [
+     *         'image' => [
+     *             // USD per megapixel (Together's FLUX pricing) — verified
+     *             // 2026-08-15 against together.ai/models/flux-1-schnell;
+     *             // re-check before relying on this long-term.
+     *             'black-forest-labs/FLUX.1-schnell' => ['per_mp' => 0.0027],
+     *         ],
      *     ],
      * ],
      */
     'pricing' => [],
+
+    /**
+     * Opt-in, off by default — persists one row to ai_usage_logs (via
+     * UsageLogger) for every chat()/generateImage() call this package's
+     * drivers make, using the 'pricing' rates above to estimate cost
+     * (null when no rate is configured, never a guessed number). Powers
+     * the Settings page's "Usage & Costs" card. Applies package-wide, not
+     * just to the bundled chat UI — any AI::provider(...)->chat() call
+     * anywhere in the host app is logged the same way once this is on.
+     * Requires the ai_usage_logs migration to have run; UsageLogger no-ops
+     * silently (never breaks the underlying AI call) if it hasn't.
+     */
+    'usage_logging' => [
+        'enabled' => (bool) env('AI_USAGE_LOGGING_ENABLED', false),
+    ],
 ];

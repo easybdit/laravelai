@@ -7,6 +7,7 @@ use EasyAI\LaravelAI\Contracts\AIProviderInterface;
 use EasyAI\LaravelAI\Contracts\AIResponseInterface;
 use EasyAI\LaravelAI\Exceptions\ConnectionException;
 use EasyAI\LaravelAI\Support\TokenEstimator;
+use EasyAI\LaravelAI\Support\UsageLogger;
 use Illuminate\Http\Client\ConnectionException as HttpConnectionException;
 use Illuminate\Http\Client\PendingRequest;
 use Illuminate\Http\Client\RequestException;
@@ -210,7 +211,9 @@ abstract class AbstractDriver implements AIProviderInterface
     public function chat(array $messages): AIResponseInterface
     {
         if (!$this->shouldCache()) {
-            return $this->doChat($messages);
+            $response = $this->doChat($messages);
+            $this->logUsage($response);
+            return $response;
         }
 
         $key   = $this->cacheKey($messages);
@@ -218,13 +221,27 @@ abstract class AbstractDriver implements AIProviderInterface
 
         $cached = $store->get($key);
         if ($cached instanceof AIResponseInterface) {
-            return $cached;
+            return $cached; // served from cache — no new usage to log
         }
 
         $response = $this->doChat($messages);
         $store->put($key, $response, (int) config('ai.cache.ttl', 3600));
+        $this->logUsage($response);
 
         return $response;
+    }
+
+    /**
+     * config('ai.usage_logging.enabled')-gated (see UsageLogger) — a no-op
+     * call when it's off, the default. Reads token counts off the response
+     * that already came back from doChat(), so this never adds a request.
+     */
+    protected function logUsage(AIResponseInterface $response): void
+    {
+        UsageLogger::log($this->getProviderName(), $this->currentModel, 'chat', [
+            'prompt_tokens'     => $response->getPromptTokens(),
+            'completion_tokens' => $response->getCompletionTokens(),
+        ]);
     }
 
     /**

@@ -315,12 +315,26 @@ Identical requests (same provider, model, messages, temperature, max tokens, sys
 ```php
 // config/ai.php — empty by default; fill in your own current rate from your provider's pricing page
 'pricing' => [
-    'openai' => ['gpt-4o-mini' => ['input' => 0.15, 'output' => 0.60]], // USD per 1,000 tokens
+    'openai' => [
+        'gpt-4o-mini' => ['input' => 0.15, 'output' => 0.60], // USD per 1,000 tokens
+        'image' => ['dall-e-3' => 0.04],                       // flat USD per image
+    ],
+    'together' => [
+        'image' => ['black-forest-labs/FLUX.1-schnell' => ['per_mp' => 0.0027]], // USD per megapixel
+    ],
 ],
 ```
 ```php
 $response->getEstimatedCost(); // float, or null if that exact provider/model has no configured rate
 ```
+
+Want that totaled up over time instead of read off one response at a time? Turn on persisted usage logging — off by default, same opt-in posture as everything else here:
+
+```env
+AI_USAGE_LOGGING_ENABLED=true
+```
+
+Every `chat()`/`generateImage()` call (from the built-in chat UI and your own `AI::provider(...)` code alike) then appends a row to `ai_usage_logs`, using the same `pricing` rates above. A "📊 Usage & Costs" tab on `/ai-chat/settings` shows total spend, a breakdown by provider, and the most recent calls — same fail-safe posture as the rest of the Settings page: an unconfigured rate just shows as "—", never a guessed number.
 
 Health-check + fallback across providers:
 
