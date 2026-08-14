@@ -27,7 +27,9 @@ class TogetherDriver extends OpenAIDriver
             $response = Http::timeout($this->getTimeout())
                 ->withToken($this->config['api_key'])
                 ->post($url, [
-                    'model'  => $this->config['image_model'] ?? 'black-forest-labs/FLUX.1-schnell-Free',
+                    // Falls back to the paid FLUX.1-schnell, not the "-Free"
+                    // promotional endpoint — see the matching note in config/ai.php.
+                    'model'  => $this->config['image_model'] ?? 'black-forest-labs/FLUX.1-schnell',
                     'prompt' => $prompt,
                     'width'  => (int) explode('x', $this->config['image_size'] ?? '1024x1024')[0],
                     'height' => (int) (explode('x', $this->config['image_size'] ?? '1024x1024')[1] ?? 1024),

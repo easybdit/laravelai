@@ -96,8 +96,17 @@ return [
             'options' => ['temperature' => 0.7, 'max_tokens' => 2000],
             // Together AI also serves image generation (FLUX) — used by /image and /img
             // commands in the chat UI when 'image_enabled' is on.
+            //
+            // The promotional "-Free" endpoint (black-forest-labs/FLUX.1-schnell-Free)
+            // is not currently live on Together's Serverless API (confirmed against
+            // Together's own model page, which lists it "Launching soon" and returns
+            // a 400 model_not_available for every account until it does) — so the
+            // default here is the regular paid FLUX.1-schnell instead. It's
+            // inexpensive ($0.0027/MP — a fraction of a cent per image) and requires
+            // only a positive credit balance on the Together account, not a
+            // dedicated endpoint.
             'image_enabled' => (bool) env('AI_TOGETHER_IMAGE_ENABLED', false),
-            'image_model'   => env('AI_TOGETHER_IMAGE_MODEL', 'black-forest-labs/FLUX.1-schnell-Free'),
+            'image_model'   => env('AI_TOGETHER_IMAGE_MODEL', 'black-forest-labs/FLUX.1-schnell'),
             'image_size'    => env('AI_TOGETHER_IMAGE_SIZE', '1024x1024'),
             'image_steps'   => (int) env('AI_TOGETHER_IMAGE_STEPS', 4),
         ],

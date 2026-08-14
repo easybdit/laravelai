@@ -92,7 +92,7 @@ class ImageGenerationTest extends TestCase
 
         $this->assertSame('https://together.example/flux-generated.png', $url);
 
-        Http::assertSent(fn ($request) => $request->data()['model'] === 'black-forest-labs/FLUX.1-schnell-Free'
+        Http::assertSent(fn ($request) => $request->data()['model'] === 'black-forest-labs/FLUX.1-schnell'
             && $request->data()['prompt'] === 'a red fox in snow');
     }
 }

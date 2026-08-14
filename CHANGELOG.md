@@ -1,5 +1,15 @@
 # Changelog
 
+## v2.10.1 — 2026-08-15
+
+### 🔧 Fix: Together AI's default image model returned `model_not_available`
+
+`black-forest-labs/FLUX.1-schnell-Free` — the default `image_model` for `/image`/`/img` generation — currently 400s for every account, not just misconfigured ones: `{"type": "invalid_request_error", "code": "model_not_available"}`, telling you to create a dedicated endpoint for it. Confirmed directly against Together's own model page, which lists that endpoint as "Launching soon" and states outright that it "is not available on Together's Serverless API" right now — the promotional free tier the default was written against isn't live yet.
+
+Default changed to the regular paid `black-forest-labs/FLUX.1-schnell` — $0.0027/MP (roughly $0.003 for a 1024×1024 image), needing only a positive credit balance on the Together account rather than a dedicated endpoint. `AI_TOGETHER_IMAGE_MODEL` (or the Settings-page "Image model" field from v2.10.0) still overrides it same as before.
+
+240/240 tests passing.
+
 ## v2.10.0 — 2026-08-15
 
 ### 🟣 Together AI image-generation settings, now editable from the admin UI
