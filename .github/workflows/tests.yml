@@ -33,12 +33,36 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # PHP 8.1 — the package's real floor (readonly promoted
+          # properties, corrected from a stale ^8.0 composer.json claim
+          # this same session) — paired with Laravel 10, the oldest
+          # supported major, on testbench 8.x (the matching version per
+          # orchestra/testbench's own compatibility table; confirmed its
+          # composer.json requires php:^8.1, so this is the lowest
+          # PHP/Laravel/testbench combo that can actually run at all).
+          - php: '8.1'
+            laravel: '10.*'
+            testbench: '8.*'
+          # PHP 8.2 — previously untested entirely, despite the README
+          # claiming 8.1+ support this whole time.
+          - php: '8.2'
+            laravel: '12.*'
+            testbench: '10.*'
           - php: '8.3'
             laravel: '12.*'
             testbench: '10.*'
           - php: '8.4'
             laravel: '12.*'
             testbench: '10.*'
+          # Laravel 13 — testbench 11.x requires laravel/framework ^13.23.0
+          # and php ^8.3 (confirmed against orchestra/testbench-core's own
+          # composer.json), so this is the earliest PHP this leg can use.
+          - php: '8.3'
+            laravel: '13.*'
+            testbench: '11.*'
+          - php: '8.4'
+            laravel: '13.*'
+            testbench: '11.*'
 
     name: PHP ${{ matrix.php }} — Laravel ${{ matrix.laravel }}
 

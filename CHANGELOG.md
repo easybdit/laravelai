@@ -1,5 +1,73 @@
 # Changelog
 
+## v2.8.0 — 2026-08-14
+
+### 🗂️ Structured output — `->format($schema)` across every provider
+
+Closes the one real feature gap found while writing an honest comparison against Laravel's own `laravel/ai` SDK: getting the model to return actual data instead of prose was previously an Ollama-only, undocumented side effect of `->format()` (silently ignored by every other driver). Now works identically everywhere:
+
+```php
+$response = AI::provider('openai')->format($schema)->chat($messages);
+$response->getStructuredData(); // ['city' => 'Paris', 'temp_c' => 22]
+```
+
+`'json'` for loose "must be valid JSON" mode, or a JSON Schema array to constrain the exact shape. Each driver maps it to its own real mechanism — OpenAI (and DeepSeek/Groq/Together/Custom, inherited) `response_format`, Gemini `responseSchema`, Ollama's native `format` param (unchanged, already worked) — and, since Anthropic has no native JSON mode, a forced tool call built transparently under the hood there, unpacked back into `getStructuredData()` rather than surfaced as a real tool call. `AIResponse::getStructuredData()`/`hasStructuredData()` are `null`/`false` for a normal response — never inferred from content that merely looks like JSON.
+
+One honestly-documented caveat rather than a silent gap: `->format()` + `->stream()` together isn't supported on Anthropic specifically — the forced-tool-call mechanism it needs isn't decodable from a text/thinking-only stream parser, so this throws instead of returning empty content.
+
+10 new tests (all 5 chat-capable providers + the "never invents structured data" regression + the Anthropic stream guard). 196/196 passing overall.
+
+### 🧬 Cross-provider embeddings — `->embed()` beyond Ollama
+
+The other real gap from that same comparison pass: RAG's whole embedding step (`AI_RAG_PROVIDER`) has been configurable since it was built, but only Ollama's driver ever actually implemented `->embed()` — every other provider inherited `AbstractDriver`'s default, which just throws. Picking `AI_RAG_PROVIDER=openai` looked supported and silently never worked.
+
+Now real on **OpenAI, Gemini, and Together AI** (Together inherits it from the OpenAI driver, same as everything else it shares), verified against each provider's actual API reference rather than assumed — OpenAI's `/embeddings` (with results re-sorted by the response's own `index` field, not trusted as pre-ordered), Gemini's `embedContent`/`batchEmbedContents` (batch mode confirmed, from Gemini's own JSON example, to need a `model` field on *every* request item, not just once at the top level — an easy detail to get wrong from memory alone). Groq and DeepSeek don't expose an embeddings endpoint on their own APIs at all (confirmed against their docs) — calling `->embed()` on either now surfaces that provider's real error rather than the previous generic "not supported" exception, an honest difference rather than a fix. Anthropic still has no `->embed()` override — confirmed they don't offer one and explicitly point users at a third-party (Voyage AI), which is a different vendor entirely, outside this package's scope.
+
+Every driver returns the same shape as Ollama's always did — an array of vectors, one per input — so `->embed($text)[0]` keeps working exactly as RAGManager already depended on. 8 new tests (OpenAI single + batch-reordering + error case, Together inheritance, Gemini single + batch, the Anthropic non-support regression, and RAG's `ingest()` actually working end-to-end through a non-Ollama provider). 204/204 passing overall.
+
+### 🔁 Automatic retry with backoff
+
+Found while working through this session's reliability pass: `config('ai.retry.times'/'sleep')` has existed since the very first v1.0 commit — but was never actually read anywhere in `src/`. Choosing `AI_RETRY_TIMES` did nothing at all; a transient `429`/`5xx` failed the whole call immediately, same as if the config didn't exist.
+
+Now real, wired through one shared `AbstractDriver::withRetry()` so every driver's retry behavior is identical rather than reimplemented per driver — a connection failure or `429`/`500`/`502`/`503`/`504` retries automatically; a `400`/`401`/`404`/etc. never does, since retrying a request that's simply wrong wastes latency for no chance of a different outcome. Explicitly opt-in: the dormant config's default (`times=2`) would have silently turned retrying on for every existing install the moment it started working, breaking this package's own consistent "nobody's behavior changes on upgrade" pattern for every other cross-cutting feature (caching, queued ingestion, chat-UI tools) — default corrected to `times=0` (disabled) instead, with the original values kept as the documented example for turning it on.
+
+```env
+AI_RETRY_TIMES=2     # total attempts, not retries-on-top-of-the-first
+AI_RETRY_SLEEP=1000  # milliseconds between attempts
+```
+
+Never applies to `stream()` — a response already partially forwarded to the caller can't be safely retried without duplicating output. A persistent connection failure after retries are exhausted still throws this package's own `ConnectionException` exactly as before (Laravel's `Http::retry(..., throw: false)` still throws its own `ConnectionException` on a connection-level failure regardless of that flag — confirmed against Laravel's own docs — which every driver's existing `catch (\Throwable $e)` already re-wraps, so no new error-handling code was needed for that path). 8 new tests (off-by-default regression, retry-then-succeed, non-retryable-status-not-retried, retries-exhausted-still-throws, config-default-honored, streaming-never-retries, connection-failure-still-wraps, and Ollama/Gemini coverage). 212/212 passing overall.
+
+### 🧪 CI actually tests what the README claims now
+
+Found while auditing this session's own PHP-version fix: CI only ever ran PHP 8.3/8.4 against Laravel 12 — PHP 8.1/8.2 and Laravel 10/13 were documented as supported but had never been exercised by a single CI run. Verified each new leg against the real, currently-published packages rather than assumed compatibility — fetched orchestra/testbench's own compatibility table plus the actual `composer.json` of testbench 8.x/11.x and laravel/framework 10.x/13.x directly from their repos to confirm exact PHP floors (testbench 8.x → `php:^8.1`, matching Laravel 10 itself; testbench 11.x → `php:^8.3` + `laravel/framework:^13.23.0`) before adding anything. `composer.json`'s own `require-dev` for `orchestra/testbench` didn't even allow `^11.0` yet — widened so a real contributor's `composer install` can actually reach Laravel 13 too, not just CI's per-leg override.
+
+New matrix: PHP 8.1×Laravel 10, PHP 8.2×Laravel 12, PHP 8.3×Laravel 12 (existing), PHP 8.4×Laravel 12 (existing), PHP 8.3×Laravel 13, PHP 8.4×Laravel 13 — six legs, up from two. Laravel 11 stays dropped, unchanged from the prior session's finding: every 11.x release ever published is flagged by security advisories only ever fixed starting at 12.60.0/13.10.0, never backported, so `composer require orchestra/testbench:9.*` is structurally unsatisfiable regardless of anything this package's `composer.json` could do — not re-investigated here, that finding still holds.
+
+### 🎨 OpenAI image generation
+
+`->generateImage()` was Together-AI-only (FLUX) until now. Added for OpenAI, verified against OpenAI's own OpenAPI spec (grepped the raw schema directly rather than trusting a summarized fetch, after `platform.openai.com`'s docs pages themselves returned 403) rather than assumed: `dall-e-2`/`dall-e-3` return a hosted `url` when `response_format: 'url'` is requested (the default here); the newer GPT image models (`gpt-image-1`, `gpt-image-1-mini`, `gpt-image-1.5`) reject that parameter outright and always return `b64_json` instead — confirmed from the spec's own line, "This parameter isn't supported for the GPT image models, which always return base64-encoded images." Both paths return the same thing from this package's side — a single usable string, `data:image/png;base64,...` for the base64 case — so `generateImage()`'s contract stays identical to Together's regardless of which model is configured.
+
+**Gemini image generation was investigated and deliberately not shipped this round.** Google's current docs describe image generation exclusively through a new "Interactions API" (`/v1beta/interactions`), a different request/response shape from the `generateContent`/`streamGenerateContent` pattern every other Gemini feature in this package (chat, thinking, tool-calling, structured output, embeddings) is built on — and one recent enough to sit outside what could be cross-checked with confidence the way everything else this session was. Rather than ship a guess against an API surface that couldn't be verified as thoroughly, this stays explicitly on the roadmap instead.
+
+5 new tests (OpenAI url path, OpenAI base64 path, error handling, malformed-response handling, and one regression test for Together's pre-existing implementation, which had zero test coverage before this). 217/217 passing overall.
+
+### 🎙️ Audio — speech-to-text and text-to-speech
+
+The last verified gap from the `laravel/ai` comparison that started this session's work. `->transcribe()` (OpenAI's `/audio/transcriptions`, multipart file upload, `whisper-1` by default) and `->textToSpeech()` (`/audio/speech`, returns raw binary audio bytes — confirmed `application/octet-stream` per OpenAI's own spec, not a JSON wrapper) — both grepped directly from OpenAI's raw OpenAPI YAML after `platform.openai.com`'s own docs pages 403'd, same verification approach as this session's other API work.
+
+Inherited by DeepSeek/Groq/Together/Custom the same as `embed()`/`generateImage()`, and checked per-provider rather than assumed from "OpenAI-compatible chat completions" alone: Groq's own docs confirm a genuinely OpenAI-shaped `/audio/transcriptions` *and* `/audio/speech` (their docs literally say "offering OpenAI-compatible endpoints"), Together has `/audio/speech` but no transcription endpoint at all, DeepSeek has neither.
+
+6 new tests (transcribe success, missing-file guard, error handling, TTS byte-passthrough, TTS option overrides, Groq inheritance). 223/223 passing overall.
+
+### 💵 Cost estimation
+
+`AIResponse::getEstimatedCost()`, backed by a new `config('ai.pricing')` — deliberately shipped **empty**, not pre-filled with this package's own guess at current rates. AI pricing varies per model and changes often enough (this very session surfaced several 2026-dated models — `gpt-image-1.5`, `gemini-embedding-001`, `voyage-4` — that didn't exist as of this package's own knowledge before now) that a baked-in table would eventually misreport real spend with no signal that it had gone stale, which is worse than not estimating cost at all. Returns `null` — never an extrapolated or partial number — for any provider/model pair without a configured `['input' => ..., 'output' => ...]` rate, including when only one of the two keys is set. 4 new tests (unconfigured → null, real calculation, wrong-model → null, incomplete-rate → null). 227/227 passing overall.
+
+### 🔧 PHP version requirement corrected: `^8.0` → `^8.1`
+
+`composer.json` claimed PHP 8.0 support; the code has used constructor-promoted `readonly` properties (`Agent/Tool.php`, `Agent/ToolCall.php`, `Chat/Exceptions/ChatBlockedException.php`) since earlier releases — a PHP 8.1-only feature. A PHP 8.0 install was never actually going to work; it would `composer require` successfully and then hit a fatal parse error. README's Requirements table also overstated the other direction (said 8.2+, needlessly excluding 8.1) — both now correctly say 8.1+.
+
 ## v2.7.0 — 2026-08-14
 
 ### ⚡ Groq driver

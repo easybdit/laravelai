@@ -13,6 +13,7 @@ use EasyAI\LaravelAI\Contracts\AIResponseInterface;
  * @property-read string $model
  * @property-read string $provider
  * @property-read ToolCall[] $toolCalls
+ * @property-read ?array $structured
  */
 class AIResponse implements AIResponseInterface
 {
@@ -25,6 +26,12 @@ class AIResponse implements AIResponseInterface
      *                              driver replays it back into the next request in an agent
      *                              loop. Null when not applicable (no tool calls, or a driver
      *                              that doesn't need it).
+     * @param ?array     $structured Parsed structured-output data — set only when the call was
+     *                              made with ->format($schema) (or ->format('json')) and the
+     *                              provider's response could be decoded as JSON. Null for a
+     *                              normal free-text response, and also null if the provider
+     *                              returned something that failed to decode (getContent() still
+     *                              has the raw text either way).
      */
     public function __construct(
         protected string $content,
@@ -35,6 +42,7 @@ class AIResponse implements AIResponseInterface
         protected array  $raw = [],
         protected array  $toolCalls = [],
         protected mixed  $rawAssistantMessage = null,
+        protected ?array $structured = null,
     ) {}
 
     public function __get(string $name): mixed
@@ -47,6 +55,7 @@ class AIResponse implements AIResponseInterface
             'model'            => $this->model,
             'provider'         => $this->provider,
             'toolCalls'        => $this->toolCalls,
+            'structured'       => $this->structured,
             default            => null,
         };
     }
@@ -60,6 +69,36 @@ class AIResponse implements AIResponseInterface
     public function hasToolCalls(): bool
     {
         return !empty($this->toolCalls);
+    }
+
+    public function getStructuredData(): ?array
+    {
+        return $this->structured;
+    }
+
+    public function hasStructuredData(): bool
+    {
+        return $this->structured !== null;
+    }
+
+    /**
+     * USD cost estimate from config('ai.pricing.{provider}.{model}') — an
+     * ['input' => $perThousandTokens, 'output' => $perThousandTokens] rate
+     * you supply yourself (empty by default; see that config key's own
+     * docblock for why this package doesn't ship guessed prices). Null
+     * whenever no rate is configured for this exact provider/model pair,
+     * never a silently-wrong number extrapolated from a different model.
+     */
+    public function getEstimatedCost(): ?float
+    {
+        $rate = config("ai.pricing.{$this->provider}.{$this->model}");
+
+        if (!is_array($rate) || !isset($rate['input'], $rate['output'])) {
+            return null;
+        }
+
+        return ($this->promptTokens / 1000 * $rate['input'])
+            + ($this->completionTokens / 1000 * $rate['output']);
     }
 
     public function getRawAssistantMessage(): mixed

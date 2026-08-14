@@ -26,6 +26,20 @@ return [
             'timeout' => (int) env('AI_OPENAI_TIMEOUT', 60),
             'vision'  => true,
             'options' => ['temperature' => 0.7, 'max_tokens' => 2000],
+            // Defaults to dall-e-3 rather than the newer gpt-image-1/1.5 —
+            // dall-e-3 returns a lightweight hosted URL (valid 60 minutes),
+            // matching Together's generateImage() contract and keeping a
+            // stored chat message small. The GPT image models return only
+            // base64 (confirmed against OpenAI's own OpenAPI spec — no url
+            // option exists for them at all), which this driver still
+            // supports if you set this to one of them, just as a
+            // data:image/...;base64 string instead of a URL — meaningfully
+            // larger if you store the resulting chat message.
+            'image_model' => env('AI_OPENAI_IMAGE_MODEL', 'dall-e-3'),
+            // ->transcribe() / ->textToSpeech()
+            'transcribe_model' => env('AI_OPENAI_TRANSCRIBE_MODEL', 'whisper-1'),
+            'tts_model'        => env('AI_OPENAI_TTS_MODEL', 'tts-1'),
+            'tts_voice'        => env('AI_OPENAI_TTS_VOICE', 'alloy'),
         ],
         'anthropic' => [
             'driver'  => 'anthropic',
@@ -471,8 +485,41 @@ return [
         'store'   => env('AI_CACHE_STORE', null),
     ],
 
+    /**
+     * Opt-in, off by default (times=0 — nobody's behavior changes on
+     * upgrade, same as every other cross-cutting feature this package
+     * ships). When enabled, a connection failure or a 429/5xx response
+     * automatically retries (see AbstractDriver::withRetry()) before this
+     * package's own ProviderException/ConnectionException is thrown — a
+     * 400/401/404 etc. is never retried, since retrying a request that
+     * will never succeed just adds latency for no benefit. Streaming
+     * requests never retry, regardless of this setting: a partially
+     * streamed response has already reached the caller, so retrying would
+     * either duplicate output or require throwing it away mid-flight.
+     *
+     * 'times' is the total number of attempts (Laravel's own Http::retry()
+     * semantics) — 2 means "try, and if that fails, try once more," not
+     * 2 retries on top of the first attempt.
+     */
     'retry' => [
-        'times' => (int) env('AI_RETRY_TIMES', 2),
+        'times' => (int) env('AI_RETRY_TIMES', 0),
         'sleep' => (int) env('AI_RETRY_SLEEP', 1000),
     ],
+
+    /**
+     * Deliberately empty by default — AI provider pricing changes often
+     * enough, and varies enough per model, that shipping a hardcoded price
+     * table here would go stale and quietly misreport real spend, which is
+     * worse than not estimating cost at all. AIResponse::getEstimatedCost()
+     * returns null for any provider/model with no entry here rather than
+     * guessing — check your provider's own current pricing page and fill
+     * in USD-per-1,000-tokens rates yourself, e.g.:
+     *
+     * 'pricing' => [
+     *     'openai' => [
+     *         'gpt-4o-mini' => ['input' => 0.00015, 'output' => 0.0006],
+     *     ],
+     * ],
+     */
+    'pricing' => [],
 ];

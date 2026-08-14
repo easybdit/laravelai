@@ -24,4 +24,12 @@ interface AIResponseInterface
     public function getToolCalls(): array;
 
     public function hasToolCalls(): bool;
+
+    /** Parsed structured-output data — see AIResponse's constructor docblock. */
+    public function getStructuredData(): ?array;
+
+    public function hasStructuredData(): bool;
+
+    /** USD cost estimate from config('ai.pricing.*') — null when unconfigured. */
+    public function getEstimatedCost(): ?float;
 }

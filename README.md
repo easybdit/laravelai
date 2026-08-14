@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="https://raw.githubusercontent.com/easybdit/laravelai/main/art/banner.svg" width="100%" alt="LaravelAI Banner">
+  <img src="https://raw.githubusercontent.com/easybdit/laraveleasyai/main/art/banner.svg" width="100%" alt="LaravelAI Banner">
 </p>
 
 <h1 align="center">LaravelAI</h1>
@@ -18,7 +18,7 @@
   <a href="https://packagist.org/packages/easybdit/laraveleasyai"><img src="https://img.shields.io/packagist/dt/easybdit/laraveleasyai.svg?style=flat-square&label=downloads" alt="Total Downloads"></a>
   <a href="https://packagist.org/packages/easybdit/laraveleasyai"><img src="https://img.shields.io/packagist/l/easybdit/laraveleasyai.svg?style=flat-square" alt="License"></a>
   <a href="https://packagist.org/packages/easybdit/laraveleasyai"><img src="https://img.shields.io/packagist/php-v/easybdit/laraveleasyai.svg?style=flat-square" alt="PHP Version"></a>
-  <a href="https://github.com/easybdit/laravelai/actions"><img src="https://img.shields.io/github/actions/workflow/status/easybdit/laravelai/tests.yml?branch=main&style=flat-square&label=tests" alt="Tests"></a>
+  <a href="https://github.com/easybdit/laraveleasyai/actions"><img src="https://img.shields.io/github/actions/workflow/status/easybdit/laraveleasyai/tests.yml?branch=main&style=flat-square&label=tests" alt="Tests"></a>
 </p>
 
 <p align="center">
@@ -95,9 +95,55 @@ $response = AI::provider('deepseek')->chat($messages);  // DeepSeek
 
 Built on **Laravel's driver pattern** — same architecture as Mail, Cache, and Queue.
 
+### How this compares to Laravel's own `laravel/ai` SDK
+
+They solve a narrower problem well — a clean SDK for OpenAI/Anthropic/Gemini. LaravelAI is aimed at *"I want AI running in my app today,"* including the parts an SDK alone doesn't give you:
+
+| | **LaravelAI** (this package) | `laravel/ai` (official SDK) |
+|---|---|---|
+| Providers | 8 — Ollama, OpenAI, Anthropic, DeepSeek, Groq, Gemini, Together AI, + any custom OpenAI-compatible endpoint | 3 — OpenAI, Anthropic, Gemini |
+| Free, self-hosted option | ✅ Ollama — no API key, no bill, runs on your own hardware | ❌ every provider is a paid API |
+| Ready-made chat UI | ✅ `/ai-chat`, install and it's live — no frontend to build | ❌ SDK only, bring your own UI |
+| RAG / knowledge base | ✅ built-in ingestion + search, pluggable vector store (`pgvector` included) | ❌ not included |
+| Tool/function calling | ✅ one `Tool` shape, works the same across every provider above | ✅ provider-specific |
+| Structured output | ✅ one `->format($schema)` call, works the same across every provider above (including Anthropic, via a forced tool call) | ✅ |
+| Response caching | ✅ one `.env` flag, works across all providers | — |
+| Conversation export | ✅ PDF / Word / PowerPoint, built in | ❌ |
+| PHP / Laravel support | PHP 8.1+, Laravel 10–13 | PHP 8.3+ |
+| Cost to try it right now | $0 — point `AI_PROVIDER=ollama` at a local model | needs a paid provider key first |
+
+**Three real scenarios where that difference shows up:**
+
+**1. You want to try AI in your app without spending anything or waiting on an API key.**
+```bash
+composer require easybdit/laraveleasyai
+php artisan laravelai:install   # pick "Ollama" — free, self-hosted, no key needed
+```
+```php
+echo ai('What is Laravel?'); // running against a model on your own machine
+```
+
+**2. You need a working chat screen, not just an API client.**
+```bash
+php artisan laravelai:install   # publishes /ai-chat, migrates, done
+```
+Visit `/ai-chat` — a full ChatGPT-style window (streaming, history, file uploads, exports) is already there. No React/Vue build step, no writing a chat frontend from scratch.
+
+**3. You want the model to answer from your own documents, not just its training data.**
+```php
+use EasyAI\LaravelAI\Facades\AI;
+
+AI::rag()->ingest('Refunds are accepted within 30 days of purchase.', 'policies');
+$answer = AI::rag()->ask('What is the refund window?');
+// "Refunds are accepted within 30 days of purchase."
+```
+No separate vector-database service to stand up first — the built-in scan backend works out of the box on your existing SQL database; swap in `pgvector` later only if you outgrow it.
+
 ---
 
 ## 📦 Installation
+
+> 📘 Prefer a single narrative walkthrough of every feature with real examples, install to done? See the **[Setup Guide](SETUP_GUIDE.md)**. This README is the full reference.
 
 **Step 1:** Install via Composer
 
@@ -138,7 +184,7 @@ AI_OLLAMA_MODEL=qwen2:1.5b
 
 | Requirement | Version |
 |-------------|---------|
-| PHP         | 8.2+    |
+| PHP         | 8.1+    |
 | Laravel     | 10, 11, 12, 13 |
 
 ---
@@ -175,7 +221,7 @@ php artisan tinker
 > সম্পূর্ণ ডকুমেন্টেশন ইংরেজিতে লেখা — এই অংশটি শুধু দ্রুত শুরু করার জন্য একটি সংক্ষিপ্ত বাংলা গাইড। নিচের বাটনে ক্লিক করলে পুরো পেজটি গুগল ট্রান্সলেট দিয়ে যেকোনো ভাষায় (বাংলা সহ) অনুবাদ করে দেখতে পারবেন।
 
 <p>
-  <a href="https://translate.google.com/translate?sl=en&tl=bn&u=https://github.com/easybdit/laravelai">
+  <a href="https://translate.google.com/translate?sl=en&tl=bn&u=https://github.com/easybdit/laraveleasyai">
     <img src="https://img.shields.io/badge/Google%20Translate-পুরো%20পেজ%20বাংলায়%20পড়ুন-4285F4?style=for-the-badge&logo=googletranslate&logoColor=white" alt="Translate this page to Bangla">
   </a>
 </p>
@@ -317,6 +363,8 @@ No external vector database required — uses your existing SQL database.
 
 ### Setup
 
+Free/self-hosted via Ollama (the default):
+
 ```bash
 ollama pull nomic-embed-text
 php artisan migrate
@@ -326,6 +374,20 @@ php artisan migrate
 AI_RAG_PROVIDER=ollama
 AI_RAG_EMBED_MODEL=nomic-embed-text
 ```
+
+Or point RAG's embedding step at OpenAI or Gemini instead — no Ollama dependency at all, useful if your app already only talks to a paid provider:
+
+```env
+AI_RAG_PROVIDER=openai
+AI_RAG_EMBED_MODEL=text-embedding-3-small
+```
+
+```env
+AI_RAG_PROVIDER=gemini
+AI_RAG_EMBED_MODEL=gemini-embedding-001
+```
+
+`AI_RAG_PROVIDER` just selects which driver's `->embed()` RAG calls internally — same config key regardless of provider. Not every provider has a real embeddings API to switch to: Anthropic doesn't offer one at all (they point to a third-party, Voyage AI, entirely outside this package's scope), and among the OpenAI-compatible drivers, Together AI has a genuine one but Groq and DeepSeek don't — pick from Ollama, OpenAI, Gemini, or Together.
 
 ### Usage
 
@@ -677,6 +739,25 @@ AI_OPENAI_KEY=sk-your-api-key
 AI_OPENAI_MODEL=gpt-4o-mini
 ```
 
+**Image generation** (DALL·E / GPT image models):
+
+```php
+$url = AI::provider('openai')->generateImage('a red fox in snow');
+```
+
+Defaults to `dall-e-3`, returning a hosted URL (valid 60 minutes) — same `generateImage(string): string` contract as Together's FLUX support below, so either drops straight into `![prompt]($url)` markdown or an `<img src>`. Set `AI_OPENAI_IMAGE_MODEL=gpt-image-1` (or `gpt-image-1-mini`/`gpt-image-1.5`) for OpenAI's newer models — they return only base64, no URL option at all, so this returns a `data:image/png;base64,...` string instead: still one usable string, just meaningfully larger if you store the resulting chat message. This is a PHP-API capability only for now — the chat UI's `/image` command is still wired to Together specifically, not provider-selectable yet.
+
+**Speech-to-text and text-to-speech:**
+
+```php
+$text  = AI::provider('openai')->transcribe(storage_path('app/recording.mp3'));
+$audio = AI::provider('openai')->textToSpeech('Hello there!'); // raw mp3 bytes
+
+Storage::disk('local')->put('reply.mp3', $audio);
+```
+
+`transcribe()` defaults to `whisper-1`; `textToSpeech()` defaults to voice `alloy` on model `tts-1` — override either per-call (`->textToSpeech($text, ['voice' => 'nova', 'model' => 'gpt-4o-mini-tts'])`) or via `AI_OPENAI_TRANSCRIBE_MODEL`/`AI_OPENAI_TTS_MODEL`/`AI_OPENAI_TTS_VOICE`. Both are inherited by Groq (confirmed genuinely OpenAI-compatible — Groq's own docs show the identical endpoint shape, with `whisper-large-v3-turbo` as a fast transcription model) and, for `textToSpeech()` only, Together (Together has no transcription endpoint of its own). DeepSeek exposes no audio API at all.
+
 ### Anthropic (Claude)
 
 ```env
@@ -890,6 +971,20 @@ AI_CACHE_TTL=3600          # seconds
 AI_CACHE_STORE=            # blank = your app's default cache store
 ```
 
+### Automatic Retry with Backoff
+
+Opt-in, off by default — a connection failure or a `429`/`5xx` response automatically retries before this package's own exception is raised. A `400`/`401`/`404`/etc. is never retried (it'll never succeed a second time, so retrying just adds latency). Never applies to `stream()`, regardless of this setting — a stream that's already sent partial output to the caller can't be safely retried without duplicating it.
+
+```env
+AI_RETRY_TIMES=2          # total attempts, not "retries on top of the first" — 2 means try once more after a failure
+AI_RETRY_SLEEP=1000       # milliseconds between attempts
+```
+
+```php
+// or per-call, same "total attempts" meaning
+AI::provider('openai')->retries(3, 500)->chat($messages);
+```
+
 ### Token Estimation
 
 ```php
@@ -897,11 +992,59 @@ $tokens = AI::estimateTokens('Hello world');
 $tokens = AI::estimateTokens($messagesArray);
 ```
 
+### Cost Estimation
+
+`getEstimatedCost()` is `null` by default — deliberately. AI pricing changes often enough, and varies enough per model, that shipping a baked-in price table here would eventually misreport real spend without any way to know it had gone stale. You supply the rate yourself (USD per 1,000 tokens, from your provider's own current pricing page):
+
+```php
+// config/ai.php
+'pricing' => [
+    'openai' => [
+        'gpt-4o-mini' => ['input' => 0.15, 'output' => 0.60],
+    ],
+],
+```
+
+```php
+$response = AI::provider('openai')->model('gpt-4o-mini')->chat($messages);
+$response->getEstimatedCost(); // 0.0007 (float, USD) — or null if that exact provider/model pair has no configured rate
+```
+
+### Structured Output
+
+`->format()` gets the model to return actual data instead of prose — every provider, one call site. `'json'` asks for "valid JSON, no shape enforced"; a JSON Schema array additionally constrains the exact fields.
+
+```php
+$schema = [
+    'type'       => 'object',
+    'properties' => ['city' => ['type' => 'string'], 'temp_c' => ['type' => 'number']],
+    'required'   => ['city', 'temp_c'],
+];
+
+$response = AI::provider('openai')->format($schema)->chat([
+    ['role' => 'user', 'content' => 'What is the weather in Paris? Respond with city and temp_c.'],
+]);
+
+$response->getStructuredData(); // ['city' => 'Paris', 'temp_c' => 22]
+$response->hasStructuredData(); // true
+```
+
+Works the same way on **OpenAI, Gemini, Ollama** (plus DeepSeek/Groq/Together/Custom, inherited from the OpenAI driver), and on **Anthropic** too — which has no native JSON mode, so this package builds it there as a forced tool call under the hood, transparently. `getStructuredData()` is `null` for a normal response (never invented from content that merely *looks* like JSON), and `getContent()` still has the raw text either way if a response fails to decode. One real caveat, honestly documented rather than silently broken: on Anthropic specifically, `->format()` isn't supported together with `->stream()` — it throws rather than returning empty content, since the forced-tool-call mechanism that provider needs isn't decodable from a token stream.
+
+### Embeddings
+
+```php
+$vectors = AI::provider('openai')->model('text-embedding-3-small')->embed('Hello world');
+$vectors[0]; // [0.0123, -0.0456, ...] — always an array of vectors, one per input
+
+$vectors = AI::provider('openai')->embed(['first text', 'second text']); // batch
+```
+
+Real native support on **Ollama, OpenAI, Gemini, and Together AI** (Together inherits it from the OpenAI driver, same as everything else it shares — DeepSeek and Groq don't expose an embeddings endpoint at all, so calling `->embed()` on either surfaces that provider's own error rather than this package faking a result). This is also exactly what powers [RAG](#-rag-built-in)'s `AI_RAG_PROVIDER` setting — same method, same drivers.
+
 ### Ollama Advanced Features
 
 ```php
-AI::provider('ollama')->format('json')->chat($messages);
-AI::provider('ollama')->embed('Hello world');
 AI::provider('ollama')->keepAlive('10m')->chat($messages);
 AI::provider('ollama')->options(['num_ctx' => 2048])->chat($messages);
 AI::provider('ollama')->pullModel('llama3.1:8b');
@@ -1255,8 +1398,16 @@ Either way, the sidebar's identity line and the Settings page's Gate (`manage-ai
 | v2.7 | Pluggable vector-store backend for RAG (`VectorStoreInterface` + a working pgvector implementation) | ✅ Released |
 | v2.7 | Tool-calling in the built-in chat UI | ✅ Released |
 | v2.7 | CI matrix — full suite against real MySQL and Postgres, not just SQLite | ✅ Released |
-| v2.8 | Streaming the agent module's final answer after the tool-call loop resolves | 🔜 Planned |
-| v2.6 | Pluggable vector-store backend (pgvector, etc.) for large RAG corpora | 🔜 Planned |
+| v2.8 | Structured output (`->format($schema)`) across every provider | ✅ Released |
+| v2.8 | Cross-provider embeddings — `->embed()` on OpenAI, Gemini, Together, not just Ollama | ✅ Released |
+| v2.8 | Automatic retry with backoff for transient failures (opt-in) | ✅ Released |
+| v2.8 | CI matrix — real coverage for PHP 8.1/8.2 and Laravel 10/13, not just 8.3/8.4 on Laravel 12 | ✅ Released |
+| v2.8 | OpenAI image generation (`->generateImage()`, DALL·E and GPT image models) | ✅ Released |
+| v2.8 | Gemini image generation | 🔜 Planned — Google's own docs now describe a new "Interactions API" for this, replacing the classic `generateContent` shape every other Gemini feature here uses; not implemented yet rather than guessed at without being able to verify its raw schema as confidently as everything else in this release |
+| v2.8 | Audio — `->transcribe()` / `->textToSpeech()` (OpenAI, inherited by Groq/Together where each genuinely supports it) | ✅ Released |
+| v2.8 | Cost estimation (`getEstimatedCost()`, config-driven — no built-in prices, by design) | ✅ Released |
+| v2.8 | PHP requirement corrected to the true minimum (`^8.1`) | ✅ Released |
+| v2.9 | Streaming the agent module's final answer after the tool-call loop resolves | 🔜 Planned |
 
 ---
 
@@ -1273,7 +1424,7 @@ Either way, the sidebar's identity line and the Settings page's Gate (`manage-ai
 </p>
 
 - ⭐ **Star** this repo on GitHub
-- 🐛 **Report bugs** via [Issues](https://github.com/easybdit/laravelai/issues)
+- 🐛 **Report bugs** via [Issues](https://github.com/easybdit/laraveleasyai/issues)
 - 🔀 **Submit a PR** — contributions welcome
 - 📢 **Share** with your developer friends
 
