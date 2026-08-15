@@ -499,9 +499,22 @@
                             @endif
                         </div>
                         @if($msg->role === 'assistant')
+                        @php
+                            // A pure "![prompt](url)" reply — the /image command's shape — gets
+                            // real image-format export buttons instead of a "save as .txt" that
+                            // would just dump the markdown source. Anything else (prose that
+                            // happens to reference an image among other text) keeps ⬇ Save.
+                            $imageUrl = preg_match('/^!\[[^\]]*\]\(([^)\s]+)\)\s*$/s', trim($msg->content), $imgMatch) ? $imgMatch[1] : null;
+                        @endphp
                         <div class="bubble-actions">
                             <button class="icon-action" onclick="copyText(this, {{ json_encode($msg->content) }})">Copy</button>
-                            <button class="icon-action" onclick="downloadText({{ json_encode($msg->content) }}, 'message-{{ $msg->id }}.txt')">⬇ Save</button>
+                            @if($imageUrl)
+                                <button class="icon-action" onclick="downloadImageAs({{ json_encode($imageUrl) }}, 'image-{{ $msg->id }}.png', 'png')">⬇ PNG</button>
+                                <button class="icon-action" onclick="downloadImageAs({{ json_encode($imageUrl) }}, 'image-{{ $msg->id }}.jpg', 'jpeg')">⬇ JPEG</button>
+                                <button class="icon-action" onclick="downloadImageAs({{ json_encode($imageUrl) }}, 'image-{{ $msg->id }}.pdf', 'pdf')">⬇ PDF</button>
+                            @else
+                                <button class="icon-action" onclick="downloadText({{ json_encode($msg->content) }}, 'message-{{ $msg->id }}.txt')">⬇ Save</button>
+                            @endif
                             @if($ui['tts_enabled'] ?? true)
                             <button class="icon-action" onclick="toggleReadAloud(this, {{ json_encode($msg->content) }})">🔊 Read</button>
                             @endif
@@ -967,9 +980,15 @@ function appendMsg(role, text) {
 function addAssistantActions(bubbleWrap, content, msgId) {
     const actions = document.createElement('div');
     actions.className = 'bubble-actions';
+    const imageUrl = imageMarkdownUrl(content);
+    const saveButtons = imageUrl
+        ? `<button class="icon-action" onclick="downloadImageAs(${JSON.stringify(imageUrl)}, 'image-${msgId}.png', 'png')">⬇ PNG</button>
+           <button class="icon-action" onclick="downloadImageAs(${JSON.stringify(imageUrl)}, 'image-${msgId}.jpg', 'jpeg')">⬇ JPEG</button>
+           <button class="icon-action" onclick="downloadImageAs(${JSON.stringify(imageUrl)}, 'image-${msgId}.pdf', 'pdf')">⬇ PDF</button>`
+        : `<button class="icon-action" onclick="downloadText(${JSON.stringify(content)}, 'message-${msgId}.txt')">⬇ Save</button>`;
     actions.innerHTML = `
         <button class="icon-action" onclick="copyText(this, ${JSON.stringify(content)})">Copy</button>
-        <button class="icon-action" onclick="downloadText(${JSON.stringify(content)}, 'message-${msgId}.txt')">⬇ Save</button>
+        ${saveButtons}
         @if($ui['tts_enabled'] ?? true)
         <button class="icon-action" onclick="toggleReadAloud(this, ${JSON.stringify(content)})">🔊 Read</button>
         @endif
@@ -1090,6 +1109,58 @@ function downloadText(text, filename) {
     a.download = filename;
     a.click();
     URL.revokeObjectURL(a.href);
+}
+
+/** A message whose entire content is exactly one markdown image — e.g. the /image command's reply — returns that image's URL; every other message (including a reply that merely mentions or embeds an image among other text) returns null. */
+function imageMarkdownUrl(text) {
+    const m = /^!\[[^\]]*\]\(([^)\s]+)\)\s*$/s.exec((text || '').trim());
+    return m ? m[1] : null;
+}
+
+/**
+ * PNG/JPEG: re-encoded through a canvas rather than just linking straight
+ * to the source file — guarantees the downloaded bytes actually match the
+ * requested extension regardless of what the server stored, and works
+ * whether the image is same-origin (a locally persisted /image reply) or
+ * a still-live external URL. PDF: no PDF-writing library is bundled with
+ * this package (nor worth adding for one image), so this opens a
+ * print-only tab sized to just the picture and triggers the browser's own
+ * print dialog — "Save as PDF" is a built-in destination in effectively
+ * every modern browser, no extra dependency required.
+ */
+function downloadImageAs(url, filename, format) {
+    if (format === 'pdf') {
+        const w = window.open('', '_blank');
+        if (!w) { alert('Please allow pop-ups to export as PDF.'); return; }
+        w.document.write(
+            '<title>' + filename + '</title>' +
+            '<style>@page{margin:0}body{margin:0;display:flex;align-items:center;justify-content:center;min-height:100vh}img{max-width:100%;max-height:100vh}</style>' +
+            '<img src="' + url + '" onload="window.print()">'
+        );
+        w.document.close();
+        return;
+    }
+
+    const img = new Image();
+    img.crossOrigin = 'anonymous';
+    img.onerror = () => alert('Could not load the image to export it — it may have expired.');
+    img.onload = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = img.naturalWidth;
+        canvas.height = img.naturalHeight;
+        const ctx = canvas.getContext('2d');
+        if (format === 'jpeg') { ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, canvas.width, canvas.height); } // JPEG has no transparency
+        ctx.drawImage(img, 0, 0);
+        canvas.toBlob((blob) => {
+            if (!blob) { alert('Could not export this image.'); return; }
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(blob);
+            a.download = filename;
+            a.click();
+            URL.revokeObjectURL(a.href);
+        }, format === 'jpeg' ? 'image/jpeg' : 'image/png', 0.92);
+    };
+    img.src = url;
 }
 function exportConversation() {
     const lines = [];

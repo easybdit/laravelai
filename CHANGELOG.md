@@ -1,5 +1,19 @@
 # Changelog
 
+## v2.12.0 — 2026-08-15
+
+### ⬇️ Export a generated image as PNG, JPEG, or PDF
+
+A chat reply that's *only* a generated picture (the `/image` command's output) now gets its own export buttons — ⬇ PNG, ⬇ JPEG, ⬇ PDF — instead of the generic "⬇ Save" every other reply gets, which just downloaded the raw `![prompt](url)` markdown as a `.txt` file (technically correct, not remotely what anyone wanted from an image reply).
+
+Zero new dependencies:
+- **PNG/JPEG** are re-encoded client-side through a `<canvas>` rather than linked straight to the source file — guarantees the downloaded bytes genuinely match the requested extension regardless of what the server actually stored, and works whether the image is the locally-persisted copy (v2.11.1) or, on the rare download-failure fallback, still a live external URL.
+- **PDF** opens a print-only tab sized to just the picture and triggers the browser's own print dialog — "Save as PDF" is a built-in destination there on effectively every modern browser, so no PDF-writing library needed for one image.
+
+Detection is automatic and strict: only a message whose entire content is exactly one markdown image (`^!\[...\]\(...\)$`) gets the new buttons; a reply that merely mentions or embeds a picture among other prose keeps the normal text-save behavior, unchanged.
+
+2 new tests (`ChatFlowTest.php`) confirming a pure-image reply renders the three new buttons (and not the text-save one), and a normal text reply keeps exactly what it had before. 253/253 tests passing.
+
 ## v2.11.1 — 2026-08-15
 
 ### 🔧 Fix: `/image`-generated pictures went permanently broken after a while

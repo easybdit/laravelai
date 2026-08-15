@@ -274,6 +274,8 @@ AI_TOGETHER_IMAGE_ENABLED=true
 /image a red fox in snow
 ```
 
+That reply is mirrored into this app's own attachment storage the moment it's generated (so it stays valid regardless of how long Together keeps the original around — see v2.11.1 in the [CHANGELOG](CHANGELOG.md)) and gets its own **⬇ PNG / ⬇ JPEG / ⬇ PDF** buttons instead of the generic "save as .txt" every other reply gets. No configuration needed — it's automatic for any reply that's *only* a generated image.
+
 ---
 
 ## 9. Audio — speech-to-text and text-to-speech

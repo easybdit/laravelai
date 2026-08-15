@@ -36,6 +36,36 @@ class ChatFlowTest extends TestCase
         $response->assertSee('Hello!', false);
     }
 
+    public function test_a_pure_image_reply_gets_format_export_buttons_not_a_text_save(): void
+    {
+        $session = ChatSession::create(['title' => 'Picture chat']);
+        ChatMessage::create(['chat_session_id' => $session->id, 'role' => 'user', 'content' => '/image a red fox']);
+        $imageMsg = ChatMessage::create([
+            'chat_session_id' => $session->id,
+            'role'            => 'assistant',
+            'content'         => '![a red fox](http://localhost/ai-chat/api/attachments/1?t=abc123)',
+        ]);
+
+        $html = $this->get('/ai-chat?session=' . $session->id)->assertOk()->getContent();
+
+        $this->assertStringContainsString("downloadImageAs(&quot;http:\\/\\/localhost\\/ai-chat\\/api\\/attachments\\/1?t=abc123&quot;, 'image-{$imageMsg->id}.png', 'png')", $html);
+        $this->assertStringContainsString("'image-{$imageMsg->id}.jpg', 'jpeg'", $html);
+        $this->assertStringContainsString("'image-{$imageMsg->id}.pdf', 'pdf'", $html);
+        // The generic text-save button is specifically what an image reply should NOT get.
+        $this->assertStringNotContainsString("'message-{$imageMsg->id}.txt'", $html);
+    }
+
+    public function test_a_normal_text_reply_still_gets_the_text_save_button(): void
+    {
+        $session = ChatSession::create(['title' => 'Text chat']);
+        $textMsg = ChatMessage::create(['chat_session_id' => $session->id, 'role' => 'assistant', 'content' => 'Just a normal reply.']);
+
+        $html = $this->get('/ai-chat?session=' . $session->id)->assertOk()->getContent();
+
+        $this->assertStringContainsString("downloadText(&quot;Just a normal reply.&quot;, 'message-{$textMsg->id}.txt')", $html);
+        $this->assertStringNotContainsString("'image-{$textMsg->id}.png', 'png'", $html);
+    }
+
     public function test_new_session_creates_a_guest_scoped_session(): void
     {
         $response = $this->postJson('/ai-chat/api/sessions', []);
