@@ -27,7 +27,7 @@ class SettingsController extends Controller
         'openai'    => ['api_key', 'model', 'timeout', 'image_enabled', 'image_model'],
         'anthropic' => ['api_key', 'model', 'timeout'],
         'deepseek'  => ['api_key', 'model', 'timeout'],
-        'gemini'    => ['api_key', 'model', 'timeout'],
+        'gemini'    => ['api_key', 'model', 'timeout', 'image_enabled', 'image_model'],
         'together'  => ['api_key', 'model', 'timeout', 'image_enabled', 'image_model', 'image_size', 'image_steps'],
     ];
 
