@@ -69,10 +69,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # ghostscript first, not after Setup PHP: it's ImageMagick's PDF-rasterization
+      # delegate (PdfPageRendererTest's real end-to-end case needs it, not just the
+      # imagick extension itself), and ubuntu-latest's preinstalled version is not
+      # guaranteed across runner image updates — install explicitly rather than assume.
+      - name: Install Ghostscript (Imagick's PDF delegate)
+        run: sudo apt-get update && sudo apt-get install -y ghostscript
+
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
           php-version: ${{ matrix.php }}
+          extensions: imagick
           coverage: none
 
       - name: Install dependencies

@@ -289,11 +289,18 @@ class AIChatController extends Controller
         ]);
     }
 
+    /** Hard cap on how many images ride along as vision input on one message — a directly attached image, or a PDF's rendered pages, or both mixed together. */
+    private const MAX_VISION_IMAGES = 6;
+
     /**
      * Extracted document text is appended to the outgoing message (works
-     * with every provider); the first attached image becomes a multipart
-     * vision block for VISION_PROVIDERS and a "can't view images" note for
-     * everyone else — same shape the WordPress plugin's engine settled on.
+     * with every provider); every attached image — up to
+     * self::MAX_VISION_IMAGES — becomes a multipart vision block for
+     * VISION_PROVIDERS, and a "can't view images" note for everyone else.
+     * A PDF attachment with page images already rendered (PdfPageRenderer,
+     * config('ai.chat.attachments.pdf_vision_enabled')) contributes those
+     * pages the same way, on top of its own extracted text — the user only
+     * ever picks the PDF itself, never its page images directly.
      *
      * @return array{0: string, 1: array|null, 2: int[]} [$storedMessage, $liveContent, $attachmentIds]
      */
@@ -310,11 +317,26 @@ class AIChatController extends Controller
         $attachments = ChatAttachment::whereIn('id', $ids)
             ->where('chat_session_id', $session->id)
             ->where('status', 'ready')
+            ->with('pageImages')
             ->get();
 
         $storedMessage = $message;
         $attachmentIds = [];
-        $primaryImage  = null;
+        $isVisionProvider = in_array($provider, self::VISION_PROVIDERS, true);
+        /** @var array<int, array{mime: string, data: string}> $images */
+        $images = [];
+
+        $tryAddImage = function (string $storedPath, string $mimeType) use (&$images): bool {
+            if (count($images) >= self::MAX_VISION_IMAGES) {
+                return false;
+            }
+            $path = Storage::disk('local')->path($storedPath);
+            if (!file_exists($path)) {
+                return false;
+            }
+            $images[] = ['mime' => $mimeType, 'data' => base64_encode(file_get_contents($path))];
+            return true;
+        };
 
         foreach ($attachments as $att) {
             $attachmentIds[] = $att->id;
@@ -323,23 +345,22 @@ class AIChatController extends Controller
                 if ($att->extracted_text) {
                     $storedMessage .= "\n\n[Attached document: {$att->original_name}]\n{$att->extracted_text}";
                 }
+                if ($isVisionProvider) {
+                    foreach ($att->pageImages as $page) {
+                        $tryAddImage($page->stored_path, $page->mime_type);
+                    }
+                }
                 continue;
             }
 
-            if (!$primaryImage && in_array($provider, self::VISION_PROVIDERS, true)) {
-                $path = Storage::disk('local')->path($att->stored_path);
-                if (file_exists($path)) {
-                    $primaryImage = ['path' => $path, 'mime' => $att->mime_type];
-                    continue;
-                }
+            if ($isVisionProvider && $tryAddImage($att->stored_path, $att->mime_type)) {
+                continue;
             }
 
             $storedMessage .= "\n\n[Attached image: {$att->original_name} — this AI provider cannot view images]";
         }
 
-        $liveContent = $primaryImage
-            ? MessageFormatter::withImage($storedMessage, base64_encode(file_get_contents($primaryImage['path'])), $primaryImage['mime'])
-            : null;
+        $liveContent = $images ? MessageFormatter::withImages($storedMessage, $images) : null;
 
         return [$storedMessage, $liveContent, $attachmentIds];
     }
