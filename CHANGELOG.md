@@ -1,5 +1,15 @@
 # Changelog
 
+## v2.15.1 — 2026-08-15
+
+### 🔧 CI: Laravel 11 leg restored to the test matrix
+
+Laravel 11 was dropped from CI earlier this cycle after `composer require illuminate/support:11.* illuminate/http:11.* orchestra/testbench:9.*` appeared "structurally unsatisfiable" — every laravel/framework 11.x release is flagged by one or more security advisories with no 11.x-line backport, and Composer's advisory handling seemed to refuse resolving to any of them.
+
+Re-verified live rather than assumed fixed: with this repo's existing `config.policy.advisories.block: false` / `config.audit.block-insecure: false`, the exact same `composer require ... --no-update` + `composer install` sequence the CI job runs now resolves cleanly (`laravel/framework` v11.55.1, `orchestra/testbench` v9.17.0) and the full suite passes against it — `composer audit` still reports the advisories, but nothing about install/resolution was ever actually blocked by them. Whatever produced the original failure isn't reproducible now, so the PHP 8.3 / Laravel 11 / testbench 9.* leg is back in `.github/workflows/tests.yml`.
+
+No library code changed — CI coverage only. 276/276 tests passing (verified locally against this exact Laravel 11 / testbench 9 combination, in addition to the existing matrix).
+
 ## v2.15.0 — 2026-08-16
 
 ### 🧙 The installer now offers to install optional dependencies for you
