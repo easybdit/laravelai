@@ -602,7 +602,23 @@ A reply that's *only* a generated picture (the `/image` command's output — see
 
 > **New in v2.0.0** — `AI_CHAT_ATTACHMENTS_ENABLED=true`
 
-Upload images and documents (`.txt`/`.md`/`.pdf`) mid-chat. Documents are text-extracted and appended as context for **every** provider; images become real vision input for OpenAI, Anthropic, and Gemini (via a universal multipart message format translated per-provider), with a "this provider can't view images" fallback note for everyone else.
+Upload images and documents (`.txt`/`.md`/`.pdf`) mid-chat. Documents are text-extracted and appended as context for **every** provider; images become real vision input for OpenAI, Anthropic, and Gemini (via a universal multipart message format translated per-provider), with a "this provider can't view images" fallback note for everyone else. More than one image can ride along on a single message — a direct upload and a PDF's rendered pages (below) can even be mixed together, up to 6 total.
+
+### See what's *inside* a PDF, not just its text — `pdf_vision_enabled`
+
+Plain text extraction is blind to a chart, diagram, scanned table, or photo embedded in a PDF — there's no text layer there to extract. Turn this on and an uploaded PDF also gets each page rendered to an image (via the PHP `imagick` extension), which rides along as real vision input the next time that PDF is attached to a message — on top of the plain text every PDF already gets regardless of this setting:
+
+```env
+AI_CHAT_PDF_VISION_ENABLED=true
+AI_CHAT_PDF_VISION_MAX_PAGES=5   # cap — a long PDF renders only its first N pages
+```
+
+```bash
+# A real system-level dependency, not a composer package — install at the OS level:
+apt-get install php-imagick ghostscript   # Debian/Ubuntu; Ghostscript is Imagick's PDF delegate
+```
+
+Off by default, and fails clearly rather than silently — if `imagick` isn't actually installed when this is turned on, the upload still succeeds (the PDF's extracted text is unaffected), a warning is logged, and there are simply no page images that time. No code changes needed to use it once it's on: ask the AI to "extract the values from this chart and generate new questions with different numbers" and a vision-capable provider (OpenAI, Anthropic, Gemini) can genuinely see the page, not just whatever text happened to be extractable from it.
 
 ## 📊 Analytics & Webhooks
 
@@ -1425,7 +1441,8 @@ Either way, the sidebar's identity line will pick up the resolved identity autom
 | v2.11 | Persisted usage & cost tracking (`ai_usage_logs`) — a "Usage & Costs" tab on the Settings page, covering every provider's chat *and* image calls | ✅ Released |
 | v2.11.1 | Fix — `/image` replies mirrored into local attachment storage on generation, so they no longer go permanently broken once Together's temporary URL expires | ✅ Released |
 | v2.12 | Per-image export — ⬇ PNG / ⬇ JPEG / ⬇ PDF buttons on any reply that's just a generated image | ✅ Released |
-| v2.13 | Streaming the agent module's final answer after the tool-call loop resolves | 🔜 Planned |
+| v2.13 | PDF page-image vision (`pdf_vision_enabled`) — a PDF's actual pages, not just its extracted text, become real vision input for OpenAI/Anthropic/Gemini; multi-image vision support (was one image per message, max) | ✅ Released |
+| v2.14 | Streaming the agent module's final answer after the tool-call loop resolves | 🔜 Planned |
 
 ---
 

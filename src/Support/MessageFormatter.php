@@ -71,10 +71,25 @@ class MessageFormatter
      */
     public static function withImage(string $text, string $base64, string $mime): array
     {
-        return [
-            ['type' => 'text', 'text' => $text],
-            ['type' => 'image', 'mime' => $mime, 'data' => $base64],
-        ];
+        return self::withImages($text, [['mime' => $mime, 'data' => $base64]]);
+    }
+
+    /**
+     * Same as withImage(), for more than one image in a single message —
+     * e.g. several page images rendered from one attached PDF (see
+     * PdfPageRenderer). toProviderContent()/imageBlock() already convert an
+     * arbitrary number of 'image' blocks per message; this is just the
+     * builder for that same shape when there's more than one.
+     *
+     * @param array<int, array{mime: string, data: string}> $images
+     */
+    public static function withImages(string $text, array $images): array
+    {
+        $blocks = [['type' => 'text', 'text' => $text]];
+        foreach ($images as $image) {
+            $blocks[] = ['type' => 'image', 'mime' => $image['mime'], 'data' => $image['data']];
+        }
+        return $blocks;
     }
 
     /**
