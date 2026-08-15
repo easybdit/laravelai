@@ -1,5 +1,17 @@
 # Changelog
 
+## v2.11.1 — 2026-08-15
+
+### 🔧 Fix: `/image`-generated pictures went permanently broken after a while
+
+The chat UI's `/image` command stored the assistant's reply as `![prompt](url)` using Together's response URL directly — a temporary pickup link, not permanent hosting. Confirmed directly: a URL from an image generated earlier in the same day already 404s. Any chat history referencing it goes broken forever, with no way to recover the image (the prompt is still there, but the picture itself is gone) — exactly what a real user hit logging back in.
+
+Fixed by mirroring the image into this app's own attachment storage the moment it's generated — same `chat-attachments/{session}/` disk location and `/ai-chat/api/attachments/{id}` serving route a user-*uploaded* image already uses, so it's exactly as durable. Falls back to the provider's raw URL (today's behavior) if the download itself fails, so a transient network hiccup never costs the reply entirely; no-storage mode (`AI_CHAT_DISABLE_STORAGE`) is unaffected — nothing is persisted there either way, by design.
+
+Only the built-in chat UI's `/image` command is affected — `AI::provider('together')->generateImage()` called directly from your own code is unchanged and still returns the provider's own URL, exactly as documented.
+
+3 new tests (`ImageCommandTest.php`) covering the mirror-on-generate path, the download-failure fallback, and no-storage mode. 251/251 tests passing.
+
 ## v2.11.0 — 2026-08-15
 
 ### 📊 Persisted usage & cost tracking
