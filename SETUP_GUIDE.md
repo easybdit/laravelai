@@ -15,6 +15,8 @@ php artisan laravelai:install
 
 The installer publishes `config/ai.php` and the chat UI's assets, runs migrations, walks you through picking a provider, writes the result to `.env`, and live-checks the connection when it can (Ollama). Safe to re-run later — it never overwrites an `.env` value you've already set.
 
+It also asks whether you want chat attachments (and, if `imagick` is installed, PDF page-image vision) and any conversation-export formats — say yes to either and it runs the matching `composer require` for you right then, instead of you hitting a "run this command" message the first time someone actually uploads a file or clicks export. Say no to everything and it's a no-op — every one of these stays exactly as opt-in as it's always been (see [Attachments & Vision](README.md#-attachments--vision) and [Export](README.md#export-as-pdf-word-excel-or-powerpoint) in the README).
+
 Prefer doing it by hand, or scripting it for CI?
 
 ```bash

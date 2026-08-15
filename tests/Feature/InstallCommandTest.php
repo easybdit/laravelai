@@ -7,6 +7,7 @@ use EasyAI\LaravelAI\Tests\TestCase;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Foundation\Auth\User as Authenticatable;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Process;
 use Illuminate\Support\Facades\Schema;
 
 /**
@@ -30,6 +31,17 @@ class InstallCommandTestUser extends Authenticatable
 class InstallCommandTest extends TestCase
 {
     private string $tempBasePath;
+
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        // Every test in this file runs the real installer, which can now
+        // shell out to `composer require` (configureOptionalFeatures()) —
+        // faked globally here so no test ever actually invokes composer,
+        // regardless of which optional-feature confirmations it answers.
+        Process::fake();
+    }
 
     protected function defineEnvironment($app): void
     {
@@ -104,6 +116,8 @@ class InstallCommandTest extends TestCase
                 'Ollama model (default qwen2:1.5b — fast/light; try llama3.1:8b for a larger, more capable model)',
                 'qwen2:1.5b'
             )
+            ->expectsConfirmation('Enable chat attachments — let users upload images and documents (PDF/txt/md) mid-conversation?', 'no')
+            ->expectsConfirmation('Pre-install any conversation-export formats now? (the chat UI\'s export button already offers PDF/Word/Excel/PowerPoint either way — this just avoids hitting a "run this command" message the first time someone actually downloads one)', 'no')
             ->expectsOutputToContain('Setting up LaravelAI')
             ->expectsOutputToContain('/ai-chat')
             ->assertExitCode(0);
@@ -135,6 +149,8 @@ class InstallCommandTest extends TestCase
             )
             ->expectsQuestion('Your Anthropic API key', 'sk-test-anthropic-key')
             ->expectsQuestion('Anthropic model', 'claude-sonnet-4-20250514')
+            ->expectsConfirmation('Enable chat attachments — let users upload images and documents (PDF/txt/md) mid-conversation?', 'no')
+            ->expectsConfirmation('Pre-install any conversation-export formats now? (the chat UI\'s export button already offers PDF/Word/Excel/PowerPoint either way — this just avoids hitting a "run this command" message the first time someone actually downloads one)', 'no')
             ->expectsOutputToContain('AI_PROVIDER already has a value in .env')
             ->assertExitCode(0);
 
@@ -188,6 +204,8 @@ class InstallCommandTest extends TestCase
                 'Ollama model (default qwen2:1.5b — fast/light; try llama3.1:8b for a larger, more capable model)',
                 'qwen2:1.5b'
             )
+            ->expectsConfirmation('Enable chat attachments — let users upload images and documents (PDF/txt/md) mid-conversation?', 'no')
+            ->expectsConfirmation('Pre-install any conversation-export formats now? (the chat UI\'s export button already offers PDF/Word/Excel/PowerPoint either way — this just avoids hitting a "run this command" message the first time someone actually downloads one)', 'no')
             ->assertExitCode(0);
 
         $this->assertStringContainsString('AI_PROVIDER=ollama', file_get_contents($this->envPath()));
@@ -227,9 +245,139 @@ class InstallCommandTest extends TestCase
                 'Ollama model (default qwen2:1.5b — fast/light; try llama3.1:8b for a larger, more capable model)',
                 'qwen2:1.5b'
             )
+            ->expectsConfirmation('Enable chat attachments — let users upload images and documents (PDF/txt/md) mid-conversation?', 'no')
+            ->expectsConfirmation('Pre-install any conversation-export formats now? (the chat UI\'s export button already offers PDF/Word/Excel/PowerPoint either way — this just avoids hitting a "run this command" message the first time someone actually downloads one)', 'no')
             ->expectsOutputToContain("You're already set up")
             ->assertExitCode(0);
 
         $this->assertDatabaseHas('ai_admins', ['user_id' => $user->id]);
+    }
+
+    /** Shared question chain up to (not including) the two optional-feature confirmations, so each test below only has to vary those. */
+    private function runInstallUpToOptionalFeatures()
+    {
+        return $this->artisan('laravelai:install')
+            ->expectsConfirmation('Run database migrations now?', 'no')
+            ->expectsChoice(
+                'Which AI provider do you want to use?',
+                'Ollama (free, self-hosted)',
+                [
+                    'Ollama (free, self-hosted)',
+                    'OpenAI (ChatGPT)',
+                    'Anthropic (Claude)',
+                    'DeepSeek',
+                    'Google Gemini',
+                ]
+            )
+            ->expectsQuestion('Ollama server URL', 'http://127.0.0.1:11434')
+            ->expectsQuestion(
+                'Ollama model (default qwen2:1.5b — fast/light; try llama3.1:8b for a larger, more capable model)',
+                'qwen2:1.5b'
+            );
+    }
+
+    public function test_declining_optional_features_writes_no_extra_env_keys_and_runs_no_composer(): void
+    {
+        Http::fake(['*' => Http::response('Ollama is running', 200)]);
+
+        $this->runInstallUpToOptionalFeatures()
+            ->expectsConfirmation('Enable chat attachments — let users upload images and documents (PDF/txt/md) mid-conversation?', 'no')
+            ->expectsConfirmation('Pre-install any conversation-export formats now? (the chat UI\'s export button already offers PDF/Word/Excel/PowerPoint either way — this just avoids hitting a "run this command" message the first time someone actually downloads one)', 'no')
+            ->assertExitCode(0);
+
+        $contents = file_get_contents($this->envPath());
+        $this->assertStringNotContainsString('AI_CHAT_ATTACHMENTS_ENABLED', $contents);
+        $this->assertStringNotContainsString('AI_CHAT_PDF_VISION_ENABLED', $contents);
+        Process::assertNothingRan();
+    }
+
+    public function test_enabling_attachments_installs_pdfparser_and_writes_the_env_key(): void
+    {
+        Http::fake(['*' => Http::response('Ollama is running', 200)]);
+        Process::fake(['*' => Process::result(exitCode: 0)]);
+
+        $this->runInstallUpToOptionalFeatures()
+            ->expectsConfirmation('Enable chat attachments — let users upload images and documents (PDF/txt/md) mid-conversation?', 'yes')
+            ->expectsConfirmation('  Also let the AI literally see charts, diagrams, or photos inside an uploaded PDF — not just its extractable text?', 'no')
+            ->expectsConfirmation('Pre-install any conversation-export formats now? (the chat UI\'s export button already offers PDF/Word/Excel/PowerPoint either way — this just avoids hitting a "run this command" message the first time someone actually downloads one)', 'no')
+            ->assertExitCode(0);
+
+        $this->assertStringContainsString('AI_CHAT_ATTACHMENTS_ENABLED=true', file_get_contents($this->envPath()));
+        Process::assertRan(fn ($process) => $process->command === ['composer', 'require', 'smalot/pdfparser']);
+    }
+
+    public function test_pdf_vision_is_enabled_when_imagick_is_available(): void
+    {
+        if (!extension_loaded('imagick')) {
+            $this->markTestSkipped('imagick is not installed on this machine — see .github/workflows/tests.yml, where it is.');
+        }
+
+        Http::fake(['*' => Http::response('Ollama is running', 200)]);
+        Process::fake(['*' => Process::result(exitCode: 0)]);
+
+        $this->runInstallUpToOptionalFeatures()
+            ->expectsConfirmation('Enable chat attachments — let users upload images and documents (PDF/txt/md) mid-conversation?', 'yes')
+            ->expectsConfirmation('  Also let the AI literally see charts, diagrams, or photos inside an uploaded PDF — not just its extractable text?', 'yes')
+            ->expectsConfirmation('Pre-install any conversation-export formats now? (the chat UI\'s export button already offers PDF/Word/Excel/PowerPoint either way — this just avoids hitting a "run this command" message the first time someone actually downloads one)', 'no')
+            ->assertExitCode(0);
+
+        $this->assertStringContainsString('AI_CHAT_PDF_VISION_ENABLED=true', file_get_contents($this->envPath()));
+    }
+
+    public function test_pdf_vision_is_skipped_with_a_warning_when_imagick_is_unavailable(): void
+    {
+        if (extension_loaded('imagick')) {
+            $this->markTestSkipped('imagick IS installed on this machine — see test_pdf_vision_is_enabled_when_imagick_is_available() instead.');
+        }
+
+        Http::fake(['*' => Http::response('Ollama is running', 200)]);
+        Process::fake(['*' => Process::result(exitCode: 0)]);
+
+        $this->runInstallUpToOptionalFeatures()
+            ->expectsConfirmation('Enable chat attachments — let users upload images and documents (PDF/txt/md) mid-conversation?', 'yes')
+            ->expectsConfirmation('  Also let the AI literally see charts, diagrams, or photos inside an uploaded PDF — not just its extractable text?', 'yes')
+            ->expectsConfirmation('Pre-install any conversation-export formats now? (the chat UI\'s export button already offers PDF/Word/Excel/PowerPoint either way — this just avoids hitting a "run this command" message the first time someone actually downloads one)', 'no')
+            ->expectsOutputToContain('imagick" extension isn\'t installed')
+            ->assertExitCode(0);
+
+        $this->assertStringNotContainsString('AI_CHAT_PDF_VISION_ENABLED', file_get_contents($this->envPath()));
+    }
+
+    public function test_confirmed_export_formats_are_each_installed_via_composer(): void
+    {
+        Http::fake(['*' => Http::response('Ollama is running', 200)]);
+        Process::fake(['*' => Process::result(exitCode: 0)]);
+
+        $this->runInstallUpToOptionalFeatures()
+            ->expectsConfirmation('Enable chat attachments — let users upload images and documents (PDF/txt/md) mid-conversation?', 'no')
+            ->expectsConfirmation('Pre-install any conversation-export formats now? (the chat UI\'s export button already offers PDF/Word/Excel/PowerPoint either way — this just avoids hitting a "run this command" message the first time someone actually downloads one)', 'yes')
+            ->expectsConfirmation('  Install dompdf/dompdf for PDF export?', 'yes')
+            ->expectsConfirmation('  Install phpoffice/phpword for Word (.docx) export?', 'no')
+            ->expectsConfirmation('  Install phpoffice/phpspreadsheet for Excel (.xlsx) export?', 'yes')
+            ->expectsConfirmation('  Install phpoffice/phppresentation for PowerPoint (.pptx) export?', 'no')
+            ->assertExitCode(0);
+
+        Process::assertRan(fn ($process) => $process->command === ['composer', 'require', 'dompdf/dompdf']);
+        Process::assertRan(fn ($process) => $process->command === ['composer', 'require', 'phpoffice/phpspreadsheet']);
+        Process::assertNotRan(fn ($process) => $process->command === ['composer', 'require', 'phpoffice/phpword']);
+        Process::assertNotRan(fn ($process) => $process->command === ['composer', 'require', 'phpoffice/phppresentation']);
+    }
+
+    public function test_a_failed_composer_install_warns_but_does_not_fail_the_command(): void
+    {
+        Http::fake(['*' => Http::response('Ollama is running', 200)]);
+        Process::fake(['*' => Process::result(exitCode: 1, errorOutput: 'Could not resolve host')]);
+
+        $this->runInstallUpToOptionalFeatures()
+            ->expectsConfirmation('Enable chat attachments — let users upload images and documents (PDF/txt/md) mid-conversation?', 'yes')
+            ->expectsConfirmation('  Also let the AI literally see charts, diagrams, or photos inside an uploaded PDF — not just its extractable text?', 'no')
+            ->expectsConfirmation('Pre-install any conversation-export formats now? (the chat UI\'s export button already offers PDF/Word/Excel/PowerPoint either way — this just avoids hitting a "run this command" message the first time someone actually downloads one)', 'no')
+            ->expectsOutputToContain('Could not install smalot/pdfparser automatically')
+            ->assertExitCode(0);
+
+        // The env key was still set — installation succeeding is independent
+        // of the feature being turned on; the user just has to finish the
+        // one composer command manually.
+        $this->assertStringContainsString('AI_CHAT_ATTACHMENTS_ENABLED=true', file_get_contents($this->envPath()));
     }
 }

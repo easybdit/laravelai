@@ -4,6 +4,7 @@ namespace EasyAI\LaravelAI\Console;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\Http;
+use Illuminate\Support\Facades\Process;
 
 /**
  * `php artisan laravelai:install` — the one-command answer to the five
@@ -35,6 +36,7 @@ class InstallCommand extends Command
         }
 
         [$providerKey, $envPairs] = $this->configureProvider();
+        $envPairs = array_merge($envPairs, $this->configureOptionalFeatures());
 
         if (!$this->writeEnvironment($envPairs)) {
             return 1;
@@ -170,6 +172,75 @@ class InstallCommand extends Command
         }
 
         return [$providerKey, $envPairs];
+    }
+
+    /**
+     * Chat attachments and conversation export both work fine with zero
+     * setup — they just fail with a self-documenting "run this command"
+     * message (TextExtractor, the Export controllers) until their optional
+     * composer package is actually installed, by design: forcing every
+     * install to pull in PDF/Word/Excel/PowerPoint libraries it may never
+     * use isn't worth the bloat (see composer.json's own "suggest" section).
+     * Asking here removes the friction of hitting that message at all for
+     * anyone who already knows they want a feature, without changing that
+     * "opt in, never forced" default for anyone who skips these prompts.
+     *
+     * @return array<string, string>
+     */
+    private function configureOptionalFeatures(): array
+    {
+        $this->newLine();
+        $envPairs = [];
+
+        if ($this->confirm('Enable chat attachments — let users upload images and documents (PDF/txt/md) mid-conversation?', false)) {
+            $envPairs['AI_CHAT_ATTACHMENTS_ENABLED'] = 'true';
+            $this->requireComposerPackage('smalot/pdfparser', 'text extraction for uploaded PDF documents');
+
+            if ($this->confirm('  Also let the AI literally see charts, diagrams, or photos inside an uploaded PDF — not just its extractable text?', false)) {
+                if (extension_loaded('imagick')) {
+                    $envPairs['AI_CHAT_PDF_VISION_ENABLED'] = 'true';
+                } else {
+                    $this->warn('  The PHP "imagick" extension isn\'t installed on this server (it also needs a Ghostscript delegate) — skipping this for now, since turning it on without imagick would just log a warning per upload rather than doing anything. Install imagick at the system level, then set AI_CHAT_PDF_VISION_ENABLED=true in .env yourself once it is.');
+                }
+            }
+        }
+
+        $this->newLine();
+        if ($this->confirm('Pre-install any conversation-export formats now? (the chat UI\'s export button already offers PDF/Word/Excel/PowerPoint either way — this just avoids hitting a "run this command" message the first time someone actually downloads one)', false)) {
+            foreach ([
+                'dompdf/dompdf'             => 'PDF export',
+                'phpoffice/phpword'         => 'Word (.docx) export',
+                'phpoffice/phpspreadsheet'  => 'Excel (.xlsx) export',
+                'phpoffice/phppresentation' => 'PowerPoint (.pptx) export',
+            ] as $package => $reason) {
+                if ($this->confirm("  Install {$package} for {$reason}?", false)) {
+                    $this->requireComposerPackage($package, $reason);
+                }
+            }
+        }
+
+        return $envPairs;
+    }
+
+    /**
+     * Shells out to the host app's own `composer require` — every one of
+     * these packages is a real, independent library with its own release
+     * cadence, so vendoring a copy or hand-resolving a version here would
+     * just go stale; the host app's existing composer.json/lock is the one
+     * source of truth for what's actually compatible. Never fatal: a
+     * failure (composer not on PATH, no network, a version conflict) just
+     * prints the one command to run manually and moves on, the same
+     * "always leave a manual escape hatch" posture as writeEnvironment().
+     */
+    private function requireComposerPackage(string $package, string $reason): void
+    {
+        $this->line("  Installing {$package} ({$reason})...");
+
+        $result = Process::timeout(300)->path(base_path())->run(['composer', 'require', $package]);
+
+        if (!$result->successful()) {
+            $this->warn("  Could not install {$package} automatically — run this yourself when you're ready: composer require {$package}");
+        }
     }
 
     /**
