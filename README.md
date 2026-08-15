@@ -603,6 +603,18 @@ composer require phpoffice/phppresentation  # PowerPoint (.pptx) — one slide p
 
 A reply that's *only* a generated picture (the `/image` command's output — see [Image generation](SETUP_GUIDE.md#8-image-generation)) gets its own export buttons instead of the generic "save as .txt": ⬇ PNG, ⬇ JPEG, ⬇ PDF, right on that message. Zero extra dependencies — PNG/JPEG are re-encoded client-side through a `<canvas>` (so the download always genuinely matches the extension, whatever format the server actually stored), and PDF opens the browser's own print dialog pre-sized to just the image — "Save as PDF" is a built-in destination there on effectively every modern browser, no PDF-writing library needed for one picture.
 
+### 📤 Sharing a reply — WhatsApp, Email
+
+> **New in v2.19.0**
+
+Every assistant reply gets a **📤 Share** dropdown right next to Copy — opens WhatsApp's "click to chat" link or a `mailto:` draft, pre-filled with that message's text. Zero setup, zero backend calls (no API key, no external service) — same posture as Copy/Save. Turn it off with:
+
+```env
+AI_CHAT_SHARE_ENABLED=false
+```
+
+This shares the message's *text* today — a real, ownership-gated public link (and a genuinely useful Facebook share, which needs an actual URL to point at) is a planned follow-up, not yet built.
+
 ## 📎 Attachments & Vision
 
 > **New in v2.0.0** — `AI_CHAT_ATTACHMENTS_ENABLED=true`, or say "yes" when `php artisan laravelai:install` asks — it sets the flag and runs `composer require smalot/pdfparser` for you.
@@ -1315,6 +1327,7 @@ AI_CHAT_WELCOME_ENABLED=false
 AI_CHAT_VOICE_INPUT_ENABLED=true
 AI_CHAT_TTS_ENABLED=true
 AI_CHAT_EXPORT_ENABLED=true
+AI_CHAT_SHARE_ENABLED=true
 AI_CHAT_ATTACHMENTS_ENABLED=false
 
 # Webhook (v2.0.0)
@@ -1507,6 +1520,7 @@ Either way, the sidebar's identity line will pick up the resolved identity autom
 | v2.16 | The chat UI's `/image`/`/img` command is provider-selectable — `AI_OPENAI_IMAGE_ENABLED` alongside Together's own flag, following whichever image-capable provider is actually active | ✅ Released |
 | v2.17 | Gemini image generation ("Nano Banana" model family) — `AI::provider('gemini')->generateImage()` + `AI_GEMINI_IMAGE_ENABLED` wired into the same `/image` command | ✅ Released |
 | v2.18 | Web search settings (on/off, provider, both API keys) manageable from `/ai-chat/settings`' new 🔎 Web Search tab — no `.env` edit needed | ✅ Released |
+| v2.19 | 📤 Share a reply via WhatsApp/Email — first of two share phases; a real public share-link (and a genuinely useful Facebook share) is next | ✅ Released |
 
 ---
 

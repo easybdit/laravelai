@@ -1,5 +1,19 @@
 # Changelog
 
+## v2.19.0 — 2026-08-15
+
+### 📤 Share a reply — WhatsApp, Email (Phase 1 of 2)
+
+Every assistant reply now gets a **📤 Share** dropdown next to Copy/Save — opens WhatsApp's "click to chat" link or a `mailto:` draft, pre-filled with that message's text. Pure client-side, same posture as Copy/Save/Read-aloud: no new route, no migration, no external service, no API key. Reuses the exact `.export-menu`/`toggleExportMenu()` dropdown recipe already in `chat.blade.php`, adapted for a per-message context (many Share menus can exist on one page, so it can't key off a single fixed `#id` the way the one page-level export menu does — `toggleShareMenu()` finds its own dropdown via `btn.nextElementSibling` instead).
+
+`AI_CHAT_SHARE_ENABLED` (default `true`) turns it off entirely if you don't want it — same convention as `AI_CHAT_EXPORT_ENABLED`.
+
+Deliberately scoped to *text* sharing only, planned as the first of two phases: the codebase has no concept of a public/shareable link for a chat session at all today (confirmed via a full code search before starting), so a genuinely useful Facebook share (which needs a real URL, not raw text) and a link-based upgrade to WhatsApp/Email are a follow-up, not bundled into this release.
+
+2 new tests in `ChatFlowTest`: the Share dropdown and its WhatsApp/Email invocations render on a reply by default, and are absent when `AI_CHAT_SHARE_ENABLED=false`. 292/292 tests passing (6 skipped, imagick-gated).
+
+Minor release (new backward-compatible capability): v2.19.0.
+
 ## v2.18.1 — 2026-08-15
 
 ### 🐛 Fix: a failed chat turn left an orphaned message, confusing the next one

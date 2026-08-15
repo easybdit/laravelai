@@ -409,6 +409,10 @@ return [
             'voice_input_enabled'  => (bool) env('AI_CHAT_VOICE_INPUT_ENABLED', true),
             'tts_enabled'          => (bool) env('AI_CHAT_TTS_ENABLED', true),
             'export_enabled'       => (bool) env('AI_CHAT_EXPORT_ENABLED', true),
+            // Per-message "Share" dropdown (WhatsApp/Email today — see
+            // chat.blade.php's .share-menu; a public share-link and
+            // Facebook are a planned follow-up, not yet wired to this flag).
+            'share_enabled'        => (bool) env('AI_CHAT_SHARE_ENABLED', true),
         ],
 
         'floating_widget' => [
