@@ -982,6 +982,8 @@ AI_CHAT_ENABLED_TOOLS=web_search
 
 The chat window shows a collapsible "🔧 Used N tools" line (same visual pattern as the reasoning-model "Thinking…" indicator) when a reply used one, and — same as any other reply — the final answer types out token-by-token rather than arriving all at once.
 
+> **New in v2.18.0** — all four of these (the on/off toggle, provider choice, and both keys) are also editable from `/ai-chat/settings`' **🔎 Web Search** tab, no `.env` edit or redeploy needed. Same override mechanism as every other Settings-page field — takes effect immediately, falls back to `.env` again if you clear a field.
+
 ---
 
 ## ✨ Features
@@ -1482,6 +1484,7 @@ Either way, the sidebar's identity line will pick up the resolved identity autom
 | v2.15.1 | CI fix — restored the Laravel 11 leg to the test matrix (its earlier "structurally unsatisfiable" dependency conflict no longer reproduces) | ✅ Released |
 | v2.16 | The chat UI's `/image`/`/img` command is provider-selectable — `AI_OPENAI_IMAGE_ENABLED` alongside Together's own flag, following whichever image-capable provider is actually active | ✅ Released |
 | v2.17 | Gemini image generation ("Nano Banana" model family) — `AI::provider('gemini')->generateImage()` + `AI_GEMINI_IMAGE_ENABLED` wired into the same `/image` command | ✅ Released |
+| v2.18 | Web search settings (on/off, provider, both API keys) manageable from `/ai-chat/settings`' new 🔎 Web Search tab — no `.env` edit needed | ✅ Released |
 
 ---
 

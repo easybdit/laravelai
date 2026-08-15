@@ -1,5 +1,17 @@
 # Changelog
 
+## v2.18.0 — 2026-08-15
+
+### 🔎 Web search settings, manageable from the Settings UI
+
+`AI_CHAT_TOOLS_ENABLED`, `AI_CHAT_ENABLED_TOOLS`, `AI_WEB_SEARCH_PROVIDER`, `AI_TAVILY_API_KEY`, and `AI_BRAVE_API_KEY` all required a `.env` edit and redeploy to change — every other provider-facing setting already had a Settings-page equivalent (see v2.0's Settings UI), this was the one config surface still `.env`-only.
+
+`/ai-chat/settings` gets a new **🔎 Web Search** tab: a single on/off toggle for chat-UI tool calling, a provider select (Tavily/Brave), and a password field for each provider's key — both keys save regardless of which is currently selected, so switching providers later doesn't mean re-entering one you'd already typed in once. Same `SettingsOverlay` override mechanism as every other field on this page (immediate effect, encrypted at rest — `SettingsOverlay::isSecretKey()` already matches any key ending in `api_key`, so both `ai.agent.web_search.tavily.api_key` and `...brave.api_key` are covered with no new logic needed there), same masked-placeholder-on-redisplay behavior, same "blank clears the override, falls back to `.env` again" contract.
+
+Doesn't touch `ai.chat.enabled_tools` itself (the allow-list of *which* built-in tools may run) — `web_search` is still the only one wired up (per the existing v1 note in `config/ai.php`), so the tab's toggle is really just `ai.chat.tools_enabled` plus the provider/key pair; a future second tool would need its own row here, not a bigger change to this one.
+
+7 new tests in `SettingsTest`: the tab renders, enabling + saving a Tavily key overrides config immediately, the key is encrypted at rest (verified separately from provider `api_key` encryption, since web search keys go through a different save path — `updateWebSearchSettings()`, not the generic `PROVIDER_FIELDS` loop), the masked placeholder round-trips without overwriting the real key, switching to Brave saves correctly, and blanking a key deletes its override. 289/289 tests passing (6 skipped, imagick-gated).
+
 ## v2.17.0 — 2026-08-15
 
 ### 🍌 Gemini image generation ("Nano Banana")

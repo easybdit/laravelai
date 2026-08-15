@@ -380,6 +380,8 @@ AI_CHAT_TOOLS_ENABLED=true
 AI_CHAT_ENABLED_TOOLS=web_search
 ```
 
+All of that (the toggle, which of Tavily/Brave, both API keys) is also editable from the Settings page's 🔎 Web Search tab below — no `.env` edit needed once you're set up.
+
 The Settings page (`/ai-chat/settings`) is fail-closed by default — nobody can reach it until you grant access:
 
 ```bash

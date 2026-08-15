@@ -105,6 +105,7 @@
     <div class="tabs">
         <button type="button" class="tab-btn active" data-tab="providers" onclick="showTab('providers')">⚙️ Providers</button>
         <button type="button" class="tab-btn" data-tab="usage" onclick="showTab('usage')">📊 Usage &amp; Costs</button>
+        <button type="button" class="tab-btn" data-tab="websearch" onclick="showTab('websearch')">🔎 Web Search</button>
     </div>
 
     <form method="POST" action="{{ route('ai-chat.settings.update') }}">
@@ -229,6 +230,49 @@
                         <p class="hint" style="margin-bottom:0;">No calls logged yet.</p>
                     @endif
                 @endif
+            </div>
+        </div>
+
+        <div id="tab-websearch" class="tab-panel hidden">
+            <div class="card">
+                <h2>🔎 Web Search</h2>
+                <p class="hint" style="margin-top:0;">Lets the AI search the live web when it needs something its training data doesn't have — current events, prices, a just-released version number. Works across every provider that supports tool-calling (OpenAI, Anthropic, Gemini, and Ollama with a capable model).</p>
+
+                <div class="toggle-row">
+                    <input type="hidden" name="web_search_enabled" value="0">
+                    <input type="checkbox" id="web_search_enabled" name="web_search_enabled" value="1" {{ $webSearch['enabled'] ? 'checked' : '' }}>
+                    <label for="web_search_enabled" style="font-size:0.85rem;">Enable web search for chat</label>
+                </div>
+
+                <div class="field-row">
+                    <label>Provider</label>
+                    <select name="web_search[provider]">
+                        <option value="tavily" {{ $webSearch['provider'] === 'tavily' ? 'selected' : '' }}>Tavily</option>
+                        <option value="brave" {{ $webSearch['provider'] === 'brave' ? 'selected' : '' }}>Brave Search</option>
+                    </select>
+                </div>
+
+                <div class="field-row">
+                    <label>Tavily key</label>
+                    <input
+                        type="password"
+                        name="web_search[tavily_api_key]"
+                        value="{{ $webSearch['tavily_api_key'] }}"
+                        placeholder="(unchanged if left as-is)"
+                        autocomplete="off">
+                </div>
+
+                <div class="field-row">
+                    <label>Brave key</label>
+                    <input
+                        type="password"
+                        name="web_search[brave_api_key]"
+                        value="{{ $webSearch['brave_api_key'] }}"
+                        placeholder="(unchanged if left as-is)"
+                        autocomplete="off">
+                </div>
+
+                <p class="hint" style="margin-bottom:0;">Both keys are saved so switching providers later doesn't mean re-entering one — only the key for whichever provider is selected above is actually used. Free tiers: <a href="https://tavily.com" target="_blank" rel="noopener">tavily.com</a> or <a href="https://brave.com/search/api/" target="_blank" rel="noopener">brave.com/search/api</a>.</p>
             </div>
         </div>
 
