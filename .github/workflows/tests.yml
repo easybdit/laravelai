@@ -191,11 +191,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Same reasoning as the `test` job's identical step: the imagick
+      # extension can be present without actually being able to rasterize a
+      # PDF — it needs Ghostscript as a delegate. Found live on this exact
+      # job: PdfPageRendererTest/ChatAttachmentTest's imagick-gated cases
+      # didn't skip here (the extension loads fine), they *failed* with
+      # ImagickException: Failed to read the file — because this job had
+      # imagick without Ghostscript, the one combination the guard clause
+      # can't detect in advance (extension_loaded('imagick') is true either
+      # way). Missed when Ghostscript was first added only to the `test`
+      # job's matrix, not this one.
+      - name: Install Ghostscript (Imagick's PDF delegate)
+        run: sudo apt-get update && sudo apt-get install -y ghostscript
+
       - name: Setup PHP
         uses: shivammathur/setup-php@v2
         with:
           php-version: '8.4'
-          extensions: pdo_mysql, pdo_pgsql
+          extensions: pdo_mysql, pdo_pgsql, imagick
           coverage: none
 
       - name: Install dependencies
