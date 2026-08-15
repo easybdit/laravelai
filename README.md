@@ -49,36 +49,6 @@
 
 ---
 
-## 📺 Video Tutorials
-
-<table>
-  <tr>
-    <td align="center" width="33%">
-      <a href="https://youtu.be/m_HyTIBRAOE">
-        <img src="https://img.youtube.com/vi/m_HyTIBRAOE/hqdefault.jpg" width="100%" alt="Self-Hosted AI Server"><br>
-        <b>🖥️ Self-Hosted AI Server</b>
-      </a>
-      <br><sub>Set up your own local AI server with Ollama</sub>
-    </td>
-    <td align="center" width="33%">
-      <a href="https://youtu.be/pSwewtXqgP8">
-        <img src="https://img.youtube.com/vi/pSwewtXqgP8/hqdefault.jpg" width="100%" alt="Laravel AI Package"><br>
-        <b>🚀 Laravel AI Package Setup</b>
-      </a>
-      <br><sub>Install and use LaravelAI in your project</sub>
-    </td>
-    <td align="center" width="33%">
-      <a href="https://youtu.be/pSwewtXqgP8">
-        <img src="https://img.youtube.com/vi/pSwewtXqgP8/hqdefault.jpg" width="100%" alt="Built-in Chat UI"><br>
-        <b>💬 Built-in Chat UI</b>
-      </a>
-      <br><sub>Zero-setup ChatGPT-like app included</sub>
-    </td>
-  </tr>
-</table>
-
----
-
 ## Why LaravelAI?
 
 Building AI features in Laravel normally means separate SDKs, different formats, and custom error handling for every provider. **LaravelAI eliminates all of that.**
@@ -206,6 +176,38 @@ php artisan tinker
 >>> ai('Say hello in 3 words')
 => "Hello there, friend!"
 ```
+
+### 📋 How every example below works
+
+New to Laravel, or just want to paste-and-run instead of piecing snippets together? Three things to know before you go further — everything below assumes them without repeating them every time:
+
+**1. Where to actually paste this code.** Tinker above is the fastest way to try anything on this page — paste a snippet in, press Enter, see the result immediately. For real app code, a route or a Controller method works exactly like any other Laravel code:
+
+```php
+// routes/web.php — good enough for trying things out, no view/controller needed
+use EasyAI\LaravelAI\Facades\AI;
+
+Route::get('/test-ai', function () {
+    $response = AI::chat([['role' => 'user', 'content' => 'What is Laravel?']]);
+    return $response->content;
+});
+```
+
+Visit `/test-ai` in your browser and that's it.
+
+**2. The `use` line.** Every PHP snippet assumes `use EasyAI\LaravelAI\Facades\AI;` at the top of the file (shown once above, not repeated in every example below). Add it once per file — or once per class if it's inside a Controller — and every `AI::...` call in that file works.
+
+**3. `$messages` is always this same shape**, wherever it's used without being redefined right there — a plain array of `['role' => ..., 'content' => ...]` pairs, `role` being `'user'`, `'assistant'`, or `'system'`:
+
+```php
+$messages = [
+    ['role' => 'user', 'content' => 'What is Laravel?'],
+];
+```
+
+A real back-and-forth conversation is just more entries in the same array, oldest first — each of the AI's own past replies goes in with `'role' => 'assistant'`.
+
+Want the guided, step-by-step version of all this instead of a reference page? **[TUTORIAL.md](TUTORIAL.md)** builds one real feature end to end from a blank Laravel install, explaining the "why" at every step.
 
 ---
 
@@ -913,12 +915,29 @@ echo $response->content;
 
 ### Multiple tools, and inspecting what happened
 
+A second tool, same three-line shape as `$weather` above:
+
 ```php
-$response = AI::provider('anthropic')->tools([$weather, $calculator])->run($messages);
+$calculator = Tool::make(
+    name: 'calculate',
+    description: 'Evaluate a basic arithmetic expression, e.g. "12 * (4 + 3)".',
+    parameters: ['type' => 'object', 'properties' => ['expression' => ['type' => 'string']], 'required' => ['expression']],
+    handler: fn (array $args) => ['result' => eval("return {$args['expression']};")], // demo only — see the note below
+);
+```
+
+Give the model both, and it picks whichever (if any) a given message actually needs:
+
+```php
+$response = AI::provider('anthropic')->tools([$weather, $calculator])->run([
+    ['role' => 'user', 'content' => 'What is 12 times 7?'],
+]);
 
 echo $response->content;                 // the final answer
 $response->hasToolCalls();               // false on the final turn (that's how run() knows to stop)
 ```
+
+> ⚠️ `eval()` above is only to keep this example to one line — never `eval()` a string built from model or user input in real code. A real calculator tool should parse the expression with a proper math-expression library instead.
 
 ### 🔍 Built-in web search tool
 
@@ -1011,6 +1030,8 @@ AI::provider('ollama')->stream(
 ### Health Check + Fallback
 
 ```php
+use Illuminate\Support\Facades\Log;
+
 foreach (['ollama', 'deepseek', 'openai'] as $provider) {
     try {
         if (!AI::provider($provider)->health()) continue;
@@ -1119,6 +1140,7 @@ AI::provider('ollama')->deleteModel('old-model');
 ```php
 use EasyAI\LaravelAI\Exceptions\ConnectionException;
 use EasyAI\LaravelAI\Exceptions\ProviderException;
+use Illuminate\Support\Facades\Log;
 
 try {
     $response = AI::provider('openai')->chat($messages);
@@ -1465,7 +1487,7 @@ Either way, the sidebar's identity line will pick up the resolved identity autom
 | v2.8 | Automatic retry with backoff for transient failures (opt-in) | ✅ Released |
 | v2.8 | CI matrix — real coverage for PHP 8.1/8.2 and Laravel 10/13, not just 8.3/8.4 on Laravel 12 | ✅ Released |
 | v2.8 | OpenAI image generation (`->generateImage()`, DALL·E and GPT image models) | ✅ Released |
-| v2.8 | Gemini image generation | 🔜 Planned — Google's own docs now describe a new "Interactions API" for this, replacing the classic `generateContent` shape every other Gemini feature here uses; not implemented yet rather than guessed at without being able to verify its raw schema as confidently as everything else in this release |
+| v2.8 | Gemini image generation | ⏭️ Deferred at the time — Google's docs described a newer request/response shape than every other Gemini feature here used, not implemented without being able to verify its exact schema as confidently as the rest of this release. Shipped later, verified live, as **v2.17** below |
 | v2.8 | Audio — `->transcribe()` / `->textToSpeech()` (OpenAI, inherited by Groq/Together where each genuinely supports it) | ✅ Released |
 | v2.8 | Cost estimation (`getEstimatedCost()`, config-driven — no built-in prices, by design) | ✅ Released |
 | v2.8 | PHP requirement corrected to the true minimum (`^8.1`) | ✅ Released |
