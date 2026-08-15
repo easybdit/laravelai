@@ -1,5 +1,30 @@
 # Changelog
 
+## v2.13.0 — 2026-08-16
+
+### 🌊 Streaming the agent module's final answer
+
+`run()`'s agent loop always made one blocking, non-streaming `chat()` call per round-trip — so a tool-using reply arrived as a single complete block once the whole loop resolved, never a live typing effect, even though a plain (no tools) reply had streamed token-by-token since v1. Flagged explicitly on the roadmap as deliberately not built (v2.7.0) because doing it right meant teaching all four drivers to reassemble a tool call from that provider's own real incremental streaming format first — not a small addition.
+
+```php
+$response = AI::provider('openai')->tools([$weather])->run(
+    $messages, 5, null,
+    fn (string $chunk) => print($chunk),
+);
+```
+
+New 4th `run()` parameter, `$onChunk` — every step streams instead of one `chat()` call per round-trip once it's given. `hasToolCalls()`/`getToolCalls()` work exactly the same regardless of which path produced the response, so the loop keeps executing tools correctly. Omit it (or pass `null`) for `run()`'s exact previous non-streaming behavior.
+
+Verified against each provider's own real documented (and, for Ollama, a real reported GitHub issue's) streaming format before writing a line of reassembly code — not assumed:
+- **OpenAI** (+ DeepSeek/Groq/Together/Custom, inherited): `delta.tool_calls[]` fragments, keyed by `index`; `id`/`function.name` arrive complete on that call's first delta, `function.arguments` arrives as a partial JSON *string* split across many deltas — concatenated by index, decoded once the stream ends.
+- **Anthropic**: `content_block_start` (id/name complete, empty `input: {}` placeholder) + one or more `content_block_delta`/`input_json_delta` events per block index, each carrying a `partial_json` string fragment — same concatenate-then-decode shape as OpenAI, different event names.
+- **Gemini**: a `functionCall` part arrives *whole* in a single chunk — Gemini streams a complete response structure per SSE event, not sub-field deltas, so no fragment reassembly is needed here at all.
+- **Ollama**: `message.tool_calls` also arrives whole in a single NDJSON line (`arguments` already a parsed object, not a string) — confirmed against a real reported streaming quirk (ollama/ollama#12557): the tool call lands in an earlier `done: false` line, followed by an *empty* final `done: true` line, not a gradually-built one.
+
+The built-in chat UI's `AI_CHAT_TOOLS_ENABLED` path now passes its own SSE echo callback as `$onChunk` — a tool-enabled reply in `/ai-chat` types out token-by-token exactly like every other reply now, not as one block after the loop resolves.
+
+6 new tests (`StreamingAgentTest.php`, one per provider plus a backward-compatibility check) using the real verified SSE/NDJSON shapes above, plus a new `ChatToolCallingTest` case locking in that the chat UI's SSE stream itself now emits several separate `text` events for one tool-using reply, not one. 259/259 tests passing.
+
 ## v2.12.0 — 2026-08-15
 
 ### ⬇️ Export a generated image as PNG, JPEG, or PDF

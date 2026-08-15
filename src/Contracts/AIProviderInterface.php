@@ -63,6 +63,18 @@ interface AIProviderInterface
      * observability hook (e.g. surfacing "a tool was just called" to a
      * caller), never changes what run() returns. Omit for the exact same
      * behavior as before this parameter existed.
+     *
+     * $onChunk, when given, streams every step (using the same wire
+     * protocol as stream(), including its 2-arg $chunk/$type thinking
+     * callback shape) instead of making a single non-streaming call per
+     * step — a turn that ends up requesting a tool still gets detected
+     * correctly (each driver's stream handler reassembles tool calls from
+     * the provider's own incremental format), so the loop's tool-executing
+     * behavior is unchanged; the only difference is that text a turn does
+     * produce (a final answer, or a model "thinking out loud" before
+     * calling a tool) reaches the caller token-by-token as it's generated
+     * instead of only once the whole turn completes. Omit for the exact
+     * same non-streaming behavior as before this parameter existed.
      */
-    public function run(array $messages, int $maxSteps = 5, ?callable $onToolCall = null): AIResponseInterface;
+    public function run(array $messages, int $maxSteps = 5, ?callable $onToolCall = null, ?callable $onChunk = null): AIResponseInterface;
 }

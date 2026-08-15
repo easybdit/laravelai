@@ -201,10 +201,21 @@ class GeminiDriver extends AbstractDriver
         }
     }
 
+    /**
+     * Also captures functionCall parts — needed so AbstractDriver::run()
+     * can stream every turn without losing the ability to detect and
+     * execute a tool call. Confirmed against Gemini's own streaming
+     * behavior: unlike OpenAI/Anthropic, a functionCall part's args arrive
+     * whole in a single chunk (Gemini sends a complete GenerateContentResponse
+     * structure per SSE event, not sub-field deltas the way tool-call
+     * arguments specifically are fragmented elsewhere) — no accumulation
+     * needed, just capture it when seen.
+     */
     protected function handleStream(string $url, array $body): AIResponseInterface
     {
         $callback    = $this->streamCallback;
         $fullContent = '';
+        $toolCalls   = [];
 
         $response = Http::timeout($this->getTimeout())
             ->withQueryParameters(['key' => $this->config['api_key'], 'alt' => 'sse'])
@@ -221,7 +232,7 @@ class GeminiDriver extends AbstractDriver
         // callback never receives thinking text at all.
         $callbackAcceptsType = (new \ReflectionFunction(\Closure::fromCallable($callback)))->getNumberOfParameters() > 1;
 
-        $handleLine = function (string $line) use ($callback, $callbackAcceptsType, &$fullContent) {
+        $handleLine = function (string $line) use ($callback, $callbackAcceptsType, &$fullContent, &$toolCalls) {
             $line = trim($line);
             if (!str_starts_with($line, 'data: ')) {
                 return;
@@ -231,6 +242,18 @@ class GeminiDriver extends AbstractDriver
                 return;
             }
             foreach ($json['candidates'][0]['content']['parts'] ?? [] as $part) {
+                if (isset($part['functionCall'])) {
+                    // Gemini doesn't assign an id to function calls — matched
+                    // by name/position in appendToolExchange(), same as the
+                    // non-streaming path.
+                    $toolCalls[] = new ToolCall(
+                        id:        null,
+                        name:      $part['functionCall']['name'] ?? '',
+                        arguments: $part['functionCall']['args'] ?? [],
+                    );
+                    continue;
+                }
+
                 $text = $part['text'] ?? '';
                 if ($text === '') {
                     continue;
@@ -263,14 +286,24 @@ class GeminiDriver extends AbstractDriver
         $structured = $this->extractStructuredData($fullContent);
         $this->resetOverrides();
 
+        $rawParts = [];
+        if ($fullContent !== '') {
+            $rawParts[] = ['text' => $fullContent];
+        }
+        foreach ($toolCalls as $tc) {
+            $rawParts[] = ['functionCall' => ['name' => $tc->name, 'args' => $tc->arguments]];
+        }
+
         return new AIResponse(
-            content:          $fullContent,
-            promptTokens:     $this->estimateTokens(json_encode($body['contents'])),
-            completionTokens: $this->estimateTokens($fullContent),
-            model:            $this->currentModel,
-            provider:         'gemini',
-            raw:              [],
-            structured:       $structured,
+            content:             $fullContent,
+            promptTokens:        $this->estimateTokens(json_encode($body['contents'])),
+            completionTokens:    $this->estimateTokens($fullContent),
+            model:               $this->currentModel,
+            provider:            'gemini',
+            raw:                 [],
+            toolCalls:           $toolCalls,
+            rawAssistantMessage: $rawParts ?: null,
+            structured:          $structured,
         );
     }
 

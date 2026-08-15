@@ -164,11 +164,23 @@ class OllamaDriver extends AbstractDriver
 
     // ─── Streaming ───────────────────────────────────────────────
 
+    /**
+     * Also captures message.tool_calls — needed so AbstractDriver::run()
+     * can stream every turn without losing the ability to detect and
+     * execute a tool call. Confirmed against a real reported Ollama
+     * streaming quirk (ollama/ollama#12557): unlike OpenAI/Anthropic,
+     * Ollama does not fragment a tool call's arguments across chunks —
+     * message.tool_calls arrives complete (arguments already a parsed
+     * object, not a partial JSON string) in whichever chunk carries it, no
+     * accumulation needed, just capture it when seen — same as the
+     * non-streaming path already assumes.
+     */
     protected function handleStream(string $url, array $body): AIResponseInterface
     {
         $callback = $this->streamCallback;
         $fullContent = '';
         $doneResult = null;
+        $toolCalls = [];
 
         // Reasoning models (qwen3, etc.) stream a separate "thinking" field
         // ahead of the real "content" — often for many seconds with nothing
@@ -182,7 +194,7 @@ class OllamaDriver extends AbstractDriver
         // getting them merged in unannounced.
         $callbackAcceptsType = (new \ReflectionFunction(\Closure::fromCallable($callback)))->getNumberOfParameters() > 1;
 
-        $handleLine = function (string $line) use ($callback, $callbackAcceptsType, &$fullContent, &$doneResult, $body) {
+        $handleLine = function (string $line) use ($callback, $callbackAcceptsType, &$fullContent, &$doneResult, &$toolCalls, $body) {
             $line = trim($line);
             if ($line === '') {
                 return;
@@ -203,15 +215,35 @@ class OllamaDriver extends AbstractDriver
                 $callbackAcceptsType ? $callback($chunk, 'content') : $callback($chunk);
             }
 
+            foreach ($json['message']['tool_calls'] ?? [] as $tc) {
+                $toolCalls[] = new ToolCall(
+                    id:        null,
+                    name:      $tc['function']['name'] ?? '',
+                    arguments: $tc['function']['arguments'] ?? [],
+                );
+            }
+
             if (!empty($json['done'])) {
                 $doneResult = new AIResponse(
-                    content:          $fullContent,
-                    promptTokens:     $json['prompt_eval_count'] ?? $this->estimateTokens(json_encode($body['messages'])),
-                    completionTokens: $json['eval_count'] ?? $this->estimateTokens($fullContent),
-                    model:            $json['model'] ?? $this->currentModel,
-                    provider:         'ollama',
-                    raw:              $json,
-                    structured:       $this->extractStructuredData($fullContent),
+                    content:             $fullContent,
+                    promptTokens:        $json['prompt_eval_count'] ?? $this->estimateTokens(json_encode($body['messages'])),
+                    completionTokens:    $json['eval_count'] ?? $this->estimateTokens($fullContent),
+                    model:               $json['model'] ?? $this->currentModel,
+                    provider:            'ollama',
+                    raw:                 $json,
+                    toolCalls:           $toolCalls,
+                    // Built from the accumulated $toolCalls, not this (the
+                    // 'done') chunk's own message.tool_calls — a real Ollama
+                    // stream delivers the tool call in an earlier chunk
+                    // (done: false) and an empty final done:true chunk
+                    // (confirmed live behavior, ollama/ollama#12557), so the
+                    // done chunk itself typically has none to read.
+                    rawAssistantMessage: $toolCalls ? [
+                        'role'       => 'assistant',
+                        'content'    => $fullContent,
+                        'tool_calls' => array_map(fn (ToolCall $tc) => ['function' => ['name' => $tc->name, 'arguments' => $tc->arguments]], $toolCalls),
+                    ] : null,
+                    structured:          $this->extractStructuredData($fullContent),
                 );
             }
         };

@@ -780,15 +780,15 @@ class AIChatController extends Controller
             }
 
             // Opt-in agent-loop path (config('ai.chat.tools_enabled')) — see
-            // that key's docblock in config/ai.php for the streaming
-            // tradeoff this implies. $tools stays empty (default config),
-            // so every existing install falls straight into the untouched
-            // ->stream() branch below exactly as before this existed.
+            // that key's docblock in config/ai.php. $tools stays empty
+            // (default config), so every existing install falls straight
+            // into the untouched ->stream() branch below exactly as before
+            // this existed.
             $tools = config('ai.chat.tools_enabled', false) ? $this->enabledTools() : [];
 
             try {
                 if (!empty($tools)) {
-                    $response = AI::provider($provider)
+                    AI::provider($provider)
                         ->model($chatModel)
                         ->systemPrompt((string) $systemPrompt)
                         ->timeout(300)
@@ -800,25 +800,33 @@ class AIChatController extends Controller
                                 // Fired right after each tool executes (see
                                 // AbstractDriver::run()'s $onToolCall) — a
                                 // distinct SSE event so the frontend can show
-                                // a live "used a tool" status line. run() is
-                                // non-streaming, so the final answer itself
-                                // still only arrives as one 'text' chunk below,
-                                // not token by token.
+                                // a live "used a tool" status line.
                                 echo "data: " . json_encode(['tool_call' => [
                                     'name'      => $call->name,
                                     'arguments' => $call->arguments,
                                 ]]) . "\n\n";
                                 if (ob_get_level() > 0) { ob_flush(); }
                                 flush();
+                            },
+                            // $onChunk: every step streams now, including the
+                            // final answer — reaches the browser token by
+                            // token as it's generated instead of arriving as
+                            // one block only after the whole turn finishes.
+                            // Same 'thinking' vs 'content' handling as the
+                            // plain ->stream() branch below, since a
+                            // reasoning model can still think out loud on any
+                            // step, tool-calling or not.
+                            function (string $chunk, string $type = 'content') use (&$fullReply) {
+                                if ($type === 'thinking') {
+                                    echo "data: " . json_encode(['thinking' => $chunk]) . "\n\n";
+                                } else {
+                                    $fullReply .= $chunk;
+                                    echo "data: " . json_encode(['text' => $chunk]) . "\n\n";
+                                }
+                                if (ob_get_level() > 0) { ob_flush(); }
+                                flush();
                             }
                         );
-
-                    $fullReply = $response->getContent();
-                    if ($fullReply !== '') {
-                        echo "data: " . json_encode(['text' => $fullReply]) . "\n\n";
-                        if (ob_get_level() > 0) { ob_flush(); }
-                        flush();
-                    }
                 } else {
                     AI::provider($provider)
                         ->model($chatModel)

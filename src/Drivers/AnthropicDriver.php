@@ -187,12 +187,26 @@ class AnthropicDriver extends AbstractDriver
         }
     }
 
+    /**
+     * Also reassembles tool_use blocks from content_block_start/_delta/_stop
+     * events — needed so AbstractDriver::run() can stream every turn without
+     * losing the ability to detect and execute a tool call. Confirmed
+     * against Anthropic's own streaming docs: each content block (text OR
+     * tool_use) gets its own index; a tool_use block's content_block_start
+     * carries id/name complete with an empty input:{} placeholder, then one
+     * or more content_block_delta/input_json_delta events each carry a
+     * partial_json *string* fragment — concatenated by index, JSON-decoded
+     * only once the stream ends (mirrors OpenAI's delta.tool_calls, in
+     * Anthropic's own block/event shape rather than OpenAI's flatter one).
+     */
     protected function handleStream(string $url, array $body): AIResponseInterface
     {
         $callback = $this->streamCallback;
         $fullContent = '';
         $inputTokens = 0;
         $outputTokens = 0;
+        /** @var array<int, array{type: string, text?: string, id?: ?string, name?: string, input?: string}> $blocks */
+        $blocks = [];
 
         $response = Http::timeout($this->getTimeout())
             ->withHeaders([
@@ -214,7 +228,7 @@ class AnthropicDriver extends AbstractDriver
         // into its content.
         $callbackAcceptsType = (new \ReflectionFunction(\Closure::fromCallable($callback)))->getNumberOfParameters() > 1;
 
-        $handleLine = function (string $line) use ($callback, $callbackAcceptsType, &$fullContent, &$inputTokens, &$outputTokens) {
+        $handleLine = function (string $line) use ($callback, $callbackAcceptsType, &$fullContent, &$inputTokens, &$outputTokens, &$blocks) {
             $line = trim($line);
             if (!str_starts_with($line, 'data: ')) {
                 return;
@@ -224,7 +238,15 @@ class AnthropicDriver extends AbstractDriver
                 return;
             }
 
-            $type = $json['type'] ?? '';
+            $type  = $json['type'] ?? '';
+            $index = $json['index'] ?? 0;
+
+            if ($type === 'content_block_start') {
+                $block = $json['content_block'] ?? [];
+                $blocks[$index] = ($block['type'] ?? '') === 'tool_use'
+                    ? ['type' => 'tool_use', 'id' => $block['id'] ?? null, 'name' => $block['name'] ?? '', 'input' => '']
+                    : ['type' => 'text', 'text' => ''];
+            }
 
             if ($type === 'content_block_delta') {
                 $deltaType = $json['delta']['type'] ?? '';
@@ -234,10 +256,13 @@ class AnthropicDriver extends AbstractDriver
                     if ($thinkChunk !== '' && $callbackAcceptsType) {
                         $callback($thinkChunk, 'thinking');
                     }
+                } elseif ($deltaType === 'input_json_delta') {
+                    $blocks[$index]['input'] = ($blocks[$index]['input'] ?? '') . ($json['delta']['partial_json'] ?? '');
                 } else {
                     $chunk = $json['delta']['text'] ?? '';
                     if ($chunk !== '') {
                         $fullContent .= $chunk;
+                        $blocks[$index]['text'] = ($blocks[$index]['text'] ?? '') . $chunk;
                         $callbackAcceptsType ? $callback($chunk, 'content') : $callback($chunk);
                     }
                 }
@@ -263,15 +288,34 @@ class AnthropicDriver extends AbstractDriver
         // that hits EOF) would otherwise sit in $buffer unparsed.
         $handleLine($buffer);
 
+        $toolCalls = [];
+        $rawContentBlocks = [];
+        ksort($blocks); // preserve block order, not accumulation-completion order
+        foreach ($blocks as $block) {
+            // A delta can in principle arrive for an index this parser never
+            // saw a content_block_start for (defensive, not expected from a
+            // real Anthropic stream, which always sends one first) — treat
+            // it as a text block rather than crashing on a missing 'type'.
+            if (($block['type'] ?? 'text') === 'tool_use') {
+                $input = json_decode($block['input'] ?: '{}', true) ?: [];
+                $toolCalls[] = new ToolCall(id: $block['id'], name: $block['name'], arguments: $input);
+                $rawContentBlocks[] = ['type' => 'tool_use', 'id' => $block['id'], 'name' => $block['name'], 'input' => $input];
+            } elseif (($block['text'] ?? '') !== '') {
+                $rawContentBlocks[] = ['type' => 'text', 'text' => $block['text']];
+            }
+        }
+
         $this->resetOverrides();
 
         return new AIResponse(
-            content:          $fullContent,
-            promptTokens:     $inputTokens,
-            completionTokens: $outputTokens ?: $this->estimateTokens($fullContent),
-            model:            $this->currentModel,
-            provider:         'anthropic',
-            raw:              [],
+            content:             $fullContent,
+            promptTokens:        $inputTokens,
+            completionTokens:    $outputTokens ?: $this->estimateTokens($fullContent),
+            model:               $this->currentModel,
+            provider:            'anthropic',
+            raw:                 [],
+            toolCalls:           $toolCalls,
+            rawAssistantMessage: $rawContentBlocks ?: null,
         );
     }
 
