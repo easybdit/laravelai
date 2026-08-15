@@ -117,6 +117,18 @@
         .export-menu-list button { display: block; width: 100%; text-align: left; padding: 9px 14px; background: none; border: none; font-size: 0.82rem; color: var(--text); cursor: pointer; font-family: inherit; }
         .export-menu-list button:hover { background: var(--bg); }
 
+        /* Per-message Share dropdown — same recipe as .export-menu above,
+           but there's one of these per message (not one fixed header
+           button), so it can't key off a single #id the way
+           toggleExportMenu()/closeExportMenu() do — see toggleShareMenu()
+           in the script below, which finds its own list via
+           btn.nextElementSibling instead. */
+        .share-menu { position: relative; display: inline-flex; }
+        .share-menu-list { display: none; position: absolute; top: 100%; left: 0; margin-top: 4px; background: var(--surface); border: 1px solid var(--border); border-radius: 8px; box-shadow: var(--shadow); min-width: 150px; z-index: 60; overflow: hidden; }
+        .share-menu-list.open { display: block; }
+        .share-menu-list button { display: block; width: 100%; text-align: left; padding: 8px 12px; background: none; border: none; font-size: 0.78rem; color: var(--text); cursor: pointer; font-family: inherit; }
+        .share-menu-list button:hover { background: var(--bg); }
+
         /* ── MESSAGES ──
            Claude/ChatGPT layout: user turns are a right-aligned bubble with
            no avatar; assistant turns are left-aligned, full-width, avatar
@@ -508,6 +520,15 @@
                         @endphp
                         <div class="bubble-actions">
                             <button class="icon-action" onclick="copyText(this, {{ json_encode($msg->content) }})">Copy</button>
+                            @if($ui['share_enabled'] ?? true)
+                            <div class="share-menu">
+                                <button class="icon-action" onclick="toggleShareMenu(event, this)">📤 Share</button>
+                                <div class="share-menu-list">
+                                    <button onclick="shareViaWhatsApp({{ json_encode($msg->content) }})">💬 WhatsApp</button>
+                                    <button onclick="shareViaEmail({{ json_encode($msg->content) }})">✉️ Email</button>
+                                </div>
+                            </div>
+                            @endif
                             @if($imageUrl)
                                 <button class="icon-action" onclick="downloadImageAs({{ json_encode($imageUrl) }}, 'image-{{ $msg->id }}.png', 'png')">⬇ PNG</button>
                                 <button class="icon-action" onclick="downloadImageAs({{ json_encode($imageUrl) }}, 'image-{{ $msg->id }}.jpg', 'jpeg')">⬇ JPEG</button>
@@ -988,6 +1009,15 @@ function addAssistantActions(bubbleWrap, content, msgId) {
         : `<button class="icon-action" onclick="downloadText(${JSON.stringify(content)}, 'message-${msgId}.txt')">⬇ Save</button>`;
     actions.innerHTML = `
         <button class="icon-action" onclick="copyText(this, ${JSON.stringify(content)})">Copy</button>
+        @if($ui['share_enabled'] ?? true)
+        <div class="share-menu">
+            <button class="icon-action" onclick="toggleShareMenu(event, this)">📤 Share</button>
+            <div class="share-menu-list">
+                <button onclick="shareViaWhatsApp(${JSON.stringify(content)})">💬 WhatsApp</button>
+                <button onclick="shareViaEmail(${JSON.stringify(content)})">✉️ Email</button>
+            </div>
+        </div>
+        @endif
         ${saveButtons}
         @if($ui['tts_enabled'] ?? true)
         <button class="icon-action" onclick="toggleReadAloud(this, ${JSON.stringify(content)})">🔊 Read</button>
@@ -1181,6 +1211,32 @@ function closeExportMenu() {
     document.getElementById('exportMenuList')?.classList.remove('open');
 }
 document.addEventListener('click', closeExportMenu);
+
+// ── SHARE MENU (one per message, not a single #id — see the .share-menu CSS comment) ──
+function toggleShareMenu(e, btn) {
+    e.stopPropagation();
+    const list = btn.nextElementSibling;
+    document.querySelectorAll('.share-menu-list.open').forEach(el => { if (el !== list) el.classList.remove('open'); });
+    list?.classList.toggle('open');
+}
+document.addEventListener('click', () => {
+    document.querySelectorAll('.share-menu-list.open').forEach(el => el.classList.remove('open'));
+});
+
+/**
+ * WhatsApp's "click to chat" URL — no API key, no app install required,
+ * works identically on desktop (opens WhatsApp Web) and mobile (opens the
+ * app). Phase 2 will switch this to share a real public link once one
+ * exists; for now it shares the message's own text, same as Email below.
+ */
+function shareViaWhatsApp(text) {
+    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+}
+
+/** mailto: needs no backend at all — opens whatever mail client/webmail the OS has configured. */
+function shareViaEmail(text) {
+    window.location.href = `mailto:?subject=${encodeURIComponent('Shared from AI Chat')}&body=${encodeURIComponent(text)}`;
+}
 
 async function exportServerSide(format) {
     if (!SESSION_ID) return;

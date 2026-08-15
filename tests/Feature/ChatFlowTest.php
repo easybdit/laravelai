@@ -66,6 +66,37 @@ class ChatFlowTest extends TestCase
         $this->assertStringNotContainsString("'image-{$textMsg->id}.png', 'png'", $html);
     }
 
+    public function test_share_menu_renders_on_an_assistant_reply_by_default(): void
+    {
+        $session = ChatSession::create(['title' => 'Text chat']);
+        $msg = ChatMessage::create(['chat_session_id' => $session->id, 'role' => 'assistant', 'content' => 'Just a normal reply.']);
+
+        $html = $this->get('/ai-chat?session=' . $session->id)->assertOk()->getContent();
+
+        $this->assertStringContainsString('toggleShareMenu(event, this)', $html);
+        $this->assertStringContainsString("shareViaWhatsApp(&quot;Just a normal reply.&quot;)", $html);
+        $this->assertStringContainsString("shareViaEmail(&quot;Just a normal reply.&quot;)", $html);
+    }
+
+    /**
+     * Checks for the specific per-message *invocation* strings, not the
+     * bare function names — shareViaWhatsApp()/shareViaEmail() are still
+     * defined once in the page's <script> block regardless of this flag
+     * (they're just never wired to a button when it's off).
+     */
+    public function test_share_menu_is_hidden_when_disabled(): void
+    {
+        config(['ai.chat.ui.share_enabled' => false]);
+
+        $session = ChatSession::create(['title' => 'Text chat']);
+        ChatMessage::create(['chat_session_id' => $session->id, 'role' => 'assistant', 'content' => 'Just a normal reply.']);
+
+        $html = $this->get('/ai-chat?session=' . $session->id)->assertOk()->getContent();
+
+        $this->assertStringNotContainsString('toggleShareMenu(event, this)', $html);
+        $this->assertStringNotContainsString("shareViaWhatsApp(&quot;Just a normal reply.&quot;)", $html);
+    }
+
     public function test_new_session_creates_a_guest_scoped_session(): void
     {
         $response = $this->postJson('/ai-chat/api/sessions', []);
