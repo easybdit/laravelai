@@ -9,6 +9,7 @@ use EasyAI\LaravelAI\Exceptions\ConnectionException;
 use EasyAI\LaravelAI\Exceptions\ProviderException;
 use EasyAI\LaravelAI\Response\AIResponse;
 use EasyAI\LaravelAI\Support\MessageFormatter;
+use EasyAI\LaravelAI\Support\UsageLogger;
 use Illuminate\Support\Facades\Http;
 
 class GeminiDriver extends AbstractDriver
@@ -305,6 +306,83 @@ class GeminiDriver extends AbstractDriver
             rawAssistantMessage: $rawParts ?: null,
             structured:          $structured,
         );
+    }
+
+    /**
+     * Gemini's image generation — the "Nano Banana" model family
+     * (gemini-3.1-flash-image by default). Verified live against Google's
+     * own docs (ai.google.dev/gemini-api/docs/generate-content/image-generation),
+     * not assumed from this driver's other methods, because two things are
+     * genuinely different here and the docs' own example is followed
+     * exactly rather than guessed to also work the usual way:
+     *
+     *  - Every other method on this driver authenticates with a "?key="
+     *    query parameter; the documented image-generation curl example
+     *    authenticates with an "x-goog-api-key" header instead. Used here
+     *    as documented — there was no live Gemini key in this environment
+     *    to empirically confirm the query-parameter style also succeeds
+     *    against this specific endpoint.
+     *  - Every other method builds its URL from config('ai.providers.gemini.url')
+     *    (default .../v1beta/...); the documented image example uses
+     *    .../v1/... specifically. Hardcoded to v1 here for the same reason
+     *    — not verified that v1beta also serves this endpoint.
+     *
+     * Response shape (confirmed from the docs' own JSON example):
+     * candidates[0].content.parts[] containing an inlineData object with
+     * base64 "data" and a "mimeType". Gemini's image models have no
+     * hosted-URL response mode (unlike dall-e-3/Together's FLUX) — always
+     * base64, so this returns a data:{mime};base64,{data} URI, same "one
+     * usable string" contract as OpenAI's gpt-image-1 return path.
+     */
+    public function generateImage(string $prompt): string
+    {
+        $model = $this->config['image_model'] ?? 'gemini-3.1-flash-image';
+        $url   = "https://generativelanguage.googleapis.com/v1/models/{$model}:generateContent";
+
+        $body = [
+            'contents'         => [['parts' => [['text' => $prompt]]]],
+            'generationConfig' => ['responseModalities' => ['TEXT', 'IMAGE']],
+        ];
+
+        $this->log('Image request', ['model' => $model]);
+
+        try {
+            $response = $this->withRetry(
+                Http::timeout($this->getTimeout())->withHeaders(['x-goog-api-key' => $this->config['api_key']])
+            )->post($url, $body);
+
+            if (!$response->successful()) {
+                throw new ProviderException(
+                    "gemini image error: {$response->status()} - {$response->body()}",
+                    'gemini',
+                    ['status' => $response->status()],
+                    $response->status()
+                );
+            }
+
+            foreach ($response->json('candidates.0.content.parts', []) as $part) {
+                if (!empty($part['inlineData']['data'])) {
+                    UsageLogger::log('gemini', $model, 'image', ['image_count' => 1]);
+                    $mime = $part['inlineData']['mimeType'] ?? 'image/png';
+                    return "data:{$mime};base64," . $part['inlineData']['data'];
+                }
+            }
+
+            throw new ProviderException(
+                "gemini image error: response had no inlineData image part",
+                'gemini'
+            );
+        } catch (ProviderException $e) {
+            throw $e;
+        } catch (\Throwable $e) {
+            throw new ConnectionException(
+                "gemini image connection failed: {$e->getMessage()}",
+                'gemini',
+                ['url' => $url],
+                0,
+                $e
+            );
+        }
     }
 
     /**

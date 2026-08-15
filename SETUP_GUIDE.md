@@ -270,23 +270,25 @@ AI_TAVILY_API_KEY=tvly-...
 ```php
 $url = AI::provider('together')->generateImage('a red fox in snow'); // FLUX, hosted URL
 $url = AI::provider('openai')->generateImage('a red fox in snow');   // dall-e-3 by default, also a hosted URL
+$url = AI::provider('gemini')->generateImage('a red fox in snow');   // "Nano Banana" — always base64, no URL option
 ```
 
 ```env
 AI_OPENAI_IMAGE_MODEL=gpt-image-1   # OpenAI's newer models — base64 only, no URL option
 ```
-Same `generateImage(string): string` contract either way — a `gpt-image-1` result just comes back as a `data:image/png;base64,...` string instead of a hosted link, so it still drops straight into `![prompt]($url)` markdown or an `<img src>`.
+Same `generateImage(string): string` contract either way — a `gpt-image-1`/Gemini result just comes back as a `data:image/png;base64,...` string instead of a hosted link, so it still drops straight into `![prompt]($url)` markdown or an `<img src>`.
 
 In the built-in chat UI, a `/image` (or `/img`) command is wired to whichever of these you turn on:
 ```env
 AI_TOGETHER_IMAGE_ENABLED=true
 AI_OPENAI_IMAGE_ENABLED=true
+AI_GEMINI_IMAGE_ENABLED=true
 ```
 ```
 /image a red fox in snow
 ```
 
-Turn on more than one and it's provider-selectable, not hardcoded: it uses OpenAI when OpenAI is the chat provider you're currently talking to (and its flag is on), Together when Together is, and falls back to whichever other one is enabled if the active provider can't generate images at all (e.g. you're chatting with Ollama) — see README's [OpenAI section](README.md#openai-chatgpt) for the exact preference rule.
+Turn on more than one and it's provider-selectable, not hardcoded: it uses whichever of these is the chat provider you're currently talking to (and has its flag on), and falls back to whichever other one is enabled if the active provider can't generate images at all (e.g. you're chatting with Anthropic, DeepSeek, Groq, or Ollama — none of those have an image-generation API at all, not a gap, just not something those providers offer) — see README's [OpenAI section](README.md#openai-chatgpt) for the exact preference rule.
 
 That reply is mirrored into this app's own attachment storage the moment it's generated (so it stays valid regardless of how long Together keeps the original around — see v2.11.1 in the [CHANGELOG](CHANGELOG.md)) and gets its own **⬇ PNG / ⬇ JPEG / ⬇ PDF** buttons instead of the generic "save as .txt" every other reply gets. No configuration needed — it's automatic for any reply that's *only* a generated image.
 

@@ -137,6 +137,43 @@ class ImageCommandTest extends TestCase
         Http::assertNotSent(fn ($request) => str_contains($request->url(), 'api.together.xyz/v1/images/generations'));
     }
 
+    /**
+     * Gemini has no hosted-URL response mode (always base64 — see
+     * GeminiDriver::generateImage()), so this also proves the
+     * data:...;base64,... path through persistGeneratedImage(): the
+     * markdown embeds the data URI directly rather than trying (and
+     * failing) an HTTP download of it, and no attachment is persisted
+     * since there's nothing external to mirror.
+     */
+    public function test_image_command_uses_gemini_when_it_is_the_active_and_only_enabled_provider(): void
+    {
+        Storage::fake('local');
+        config([
+            'ai.providers.gemini.image_enabled' => true,
+            'ai.providers.gemini.api_key'       => 'test-key',
+        ]);
+
+        Http::fake([
+            'generativelanguage.googleapis.com/v1/models/gemini-3.1-flash-image:generateContent' => Http::response([
+                'candidates' => [[
+                    'content' => ['parts' => [
+                        ['inlineData' => ['mimeType' => 'image/png', 'data' => 'ZmFrZWJhc2U2NA==']],
+                    ]],
+                ]],
+            ]),
+        ]);
+
+        $session = ChatSession::create(['title' => 'New Chat', 'provider' => 'gemini']);
+        $content = $this->streamImage($session, 'a red fox in snow');
+
+        $this->assertStringContainsString('[DONE]', $content);
+        $this->assertStringContainsString(
+            'data:image/png;base64,ZmFrZWJhc2U2NA==',
+            $this->firstTextEvent($content)
+        );
+        $this->assertSame(0, ChatAttachment::count());
+    }
+
     /** Together stays the fallback when the active provider isn't image-capable at all (e.g. Ollama) — today's original behavior, unchanged. */
     public function test_image_command_falls_back_to_together_when_active_provider_cannot_generate_images(): void
     {

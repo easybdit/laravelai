@@ -93,6 +93,15 @@ return [
             // (or suppresses) visible reasoning parts for 2.5-series models.
             'think'   => filter_var(env('AI_GEMINI_THINK'), FILTER_VALIDATE_BOOL, FILTER_NULL_ON_FAILURE),
             'options' => ['temperature' => 0.7, 'max_tokens' => 2000],
+            // "Nano Banana" model family — GeminiDriver::generateImage()
+            // always returns a data:...;base64,... URI (no hosted-URL mode
+            // exists for these models, confirmed against Google's own
+            // docs), so the chat UI's persisted attachment ends up larger
+            // than OpenAI/Together's hosted-link results, same tradeoff as
+            // setting AI_OPENAI_IMAGE_MODEL to a gpt-image-* model. Off by
+            // default, same posture as every other provider's image_enabled.
+            'image_enabled' => (bool) env('AI_GEMINI_IMAGE_ENABLED', false),
+            'image_model'   => env('AI_GEMINI_IMAGE_MODEL', 'gemini-3.1-flash-image'),
         ],
         'together' => [
             'driver'  => 'together',

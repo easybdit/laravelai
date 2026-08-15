@@ -43,9 +43,13 @@ class AIChatController extends Controller
      * ship here (FLUX) and stays first in the fallback list so existing
      * together.image_enabled-only setups keep behaving exactly as before;
      * openai's dall-e-3/gpt-image-1 support already existed on the driver
-     * but was never reachable from the chat UI's /image command until now.
+     * but was never reachable from the chat UI's /image command until
+     * openai.image_enabled shipped; gemini's "Nano Banana" model family is
+     * the newest addition. The other built-in providers (anthropic,
+     * deepseek, groq, ollama) genuinely have no image-generation API at
+     * all — not a gap to close, just not something those providers offer.
      */
-    private const IMAGE_PROVIDERS = ['together', 'openai'];
+    private const IMAGE_PROVIDERS = ['together', 'openai', 'gemini'];
 
     /**
      * Which provider should actually handle a /image or /img command, if

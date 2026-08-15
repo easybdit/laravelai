@@ -533,6 +533,9 @@ Cost estimation reuses the same `config('ai.pricing')` rates as [`getEstimatedCo
     'together' => [
         'image' => ['black-forest-labs/FLUX.1-schnell' => ['per_mp' => 0.0027]], // USD per megapixel
     ],
+    'gemini' => [
+        'image' => ['gemini-3.1-flash-image' => 0.04], // flat USD per image, same shape as OpenAI's
+    ],
 ],
 ```
 
@@ -830,6 +833,20 @@ AI_GEMINI_MODEL=gemini-2.0-flash
 ```env
 AI_GEMINI_THINK=true
 ```
+
+**Image generation** (the "Nano Banana" model family):
+
+```php
+$result = AI::provider('gemini')->generateImage('a red fox in snow');
+```
+
+Always returns a `data:image/png;base64,...` string — Gemini's image models have no hosted-URL response mode the way OpenAI's dall-e-3 or Together's FLUX do, so every result is base64 regardless of which model you pick. Defaults to `gemini-3.1-flash-image`; override with `AI_GEMINI_IMAGE_MODEL` (`gemini-3.1-flash-lite-image` for cheaper/faster, `gemini-3-pro-image` for the higher-quality tier, or `gemini-2.5-flash-image` for the original "Nano Banana").
+
+```env
+AI_GEMINI_IMAGE_ENABLED=true
+```
+
+Wires the same way into the chat UI's `/image`/`/img` command as OpenAI's and Together's flags — see [Image generation](SETUP_GUIDE.md#8-image-generation) for the full active-provider preference rule.
 
 ### Together AI
 
@@ -1464,6 +1481,7 @@ Either way, the sidebar's identity line will pick up the resolved identity autom
 | v2.15 | `laravelai:install` now offers to run `composer require` for whichever optional features you say yes to (chat attachments, PDF vision, each export format) instead of you hitting a "run this command" message on first use | ✅ Released |
 | v2.15.1 | CI fix — restored the Laravel 11 leg to the test matrix (its earlier "structurally unsatisfiable" dependency conflict no longer reproduces) | ✅ Released |
 | v2.16 | The chat UI's `/image`/`/img` command is provider-selectable — `AI_OPENAI_IMAGE_ENABLED` alongside Together's own flag, following whichever image-capable provider is actually active | ✅ Released |
+| v2.17 | Gemini image generation ("Nano Banana" model family) — `AI::provider('gemini')->generateImage()` + `AI_GEMINI_IMAGE_ENABLED` wired into the same `/image` command | ✅ Released |
 
 ---
 

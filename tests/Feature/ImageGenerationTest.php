@@ -95,4 +95,69 @@ class ImageGenerationTest extends TestCase
         Http::assertSent(fn ($request) => $request->data()['model'] === 'black-forest-labs/FLUX.1-schnell'
             && $request->data()['prompt'] === 'a red fox in snow');
     }
+
+    /**
+     * Gemini's "Nano Banana" image models — verified against Google's own
+     * docs (ai.google.dev/gemini-api/docs/generate-content/image-generation):
+     * response comes back as candidates[0].content.parts[].inlineData
+     * (base64 "data" + "mimeType"), no hosted-URL mode exists, so this
+     * always returns a data:...;base64,... string.
+     */
+    public function test_gemini_nano_banana_returns_data_uri(): void
+    {
+        config(['ai.providers.gemini.api_key' => 'test-key']);
+
+        Http::fake([
+            'generativelanguage.googleapis.com/v1/models/gemini-3.1-flash-image:generateContent' => Http::response([
+                'candidates' => [[
+                    'content' => [
+                        'parts' => [
+                            ['inlineData' => ['mimeType' => 'image/png', 'data' => 'ZmFrZWJhc2U2NA==']],
+                        ],
+                    ],
+                ]],
+            ]),
+        ]);
+
+        $result = AI::provider('gemini')->generateImage('a red fox in snow');
+
+        $this->assertSame('data:image/png;base64,ZmFrZWJhc2U2NA==', $result);
+
+        Http::assertSent(function ($request) {
+            $body = $request->data();
+            return $request->hasHeader('x-goog-api-key', 'test-key')
+                && $body['contents'][0]['parts'][0]['text'] === 'a red fox in snow'
+                && $body['generationConfig']['responseModalities'] === ['TEXT', 'IMAGE'];
+        });
+    }
+
+    public function test_gemini_image_error_response_throws_provider_exception(): void
+    {
+        config(['ai.providers.gemini.api_key' => 'test-key']);
+
+        Http::fake([
+            'generativelanguage.googleapis.com/v1/models/gemini-3.1-flash-image:generateContent' => Http::response(
+                ['error' => ['message' => 'invalid prompt']], 400
+            ),
+        ]);
+
+        $this->expectException(ProviderException::class);
+
+        AI::provider('gemini')->generateImage('a red fox in snow');
+    }
+
+    public function test_gemini_image_response_with_no_inline_data_throws(): void
+    {
+        config(['ai.providers.gemini.api_key' => 'test-key']);
+
+        Http::fake([
+            'generativelanguage.googleapis.com/v1/models/gemini-3.1-flash-image:generateContent' => Http::response([
+                'candidates' => [['content' => ['parts' => [['text' => 'no image, sorry']]]]],
+            ]),
+        ]);
+
+        $this->expectException(ProviderException::class);
+
+        AI::provider('gemini')->generateImage('a red fox in snow');
+    }
 }
