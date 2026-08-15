@@ -111,7 +111,18 @@ class ChatGuardTest extends TestCase
     {
         config(['ai.chat.captcha.enabled' => true]);
         $captcha = ChatGuard::generateCaptcha();
-        $tampered = preg_replace('/^\d/', '9', $captcha['token']);
+
+        // Was: preg_replace('/^\d/', '9', $captcha['token']) — flaky, since
+        // the token's leading digit is random_int(1, 9); on the ~1-in-9
+        // runs where it's already 9, that "tamper" is a no-op (the token
+        // comes out byte-identical), the signature still verifies, and
+        // this test fails asserting an exception that was never going to
+        // be thrown. Corrupting the HMAC signature itself is what "tampered
+        // token" actually means to verifyCaptcha() — deterministically
+        // invalid regardless of what the random digits happened to be.
+        $parts = explode('|', $captcha['token']);
+        $parts[4] = 'tampered' . $parts[4];
+        $tampered = implode('|', $parts);
 
         $this->expectException(ChatBlockedException::class);
         ChatGuard::enforceCaptcha($tampered, 18);
