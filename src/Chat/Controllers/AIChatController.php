@@ -20,6 +20,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Http;
 use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 
 class AIChatController extends Controller
 {
@@ -396,7 +397,26 @@ class AIChatController extends Controller
                 return;
             }
 
-            $markdown = "![{$prompt}]({$url})";
+            // Together's returned URL is a temporary pickup link, not
+            // permanent hosting — confirmed expiring within a couple of
+            // hours in real use (a stored chat message pointing straight at
+            // it goes permanently broken once it does). When storage is on,
+            // mirror the file into this app's own attachment storage
+            // immediately and link to that instead — same durability as a
+            // user-uploaded image. Falls back to the raw URL (today's
+            // behavior, and everything no-storage mode already accepts) if
+            // the download itself fails, so a transient fetch error never
+            // costs the user the image they just generated.
+            $displayUrl = $url;
+            $attachment = null;
+            if (!$disableStorage) {
+                $attachment = $this->persistGeneratedImage($session, $prompt, $url);
+                if ($attachment) {
+                    $displayUrl = route('ai-chat.attachments.view', $attachment) . '?t=' . Str::random(8);
+                }
+            }
+
+            $markdown = "![{$prompt}]({$displayUrl})";
             echo "data: " . json_encode(['text' => $markdown]) . "\n\n";
             if (ob_get_level() > 0) { ob_flush(); }
             flush();
@@ -406,6 +426,10 @@ class AIChatController extends Controller
                 ChatMessage::create(['chat_session_id' => $session->id, 'role' => 'user', 'content' => '/image ' . $prompt]);
                 $assistantMsg = ChatMessage::create(['chat_session_id' => $session->id, 'role' => 'assistant', 'content' => $markdown]);
                 echo "data: " . json_encode(['assistant_id' => $assistantMsg->id]) . "\n\n";
+
+                if ($attachment) {
+                    $attachment->update(['chat_message_id' => $assistantMsg->id]);
+                }
 
                 if ($isFirstMessage) {
                     $newTitle = mb_substr($prompt, 0, 60);
@@ -424,6 +448,51 @@ class AIChatController extends Controller
             'Cache-Control'     => 'no-cache',
             'X-Accel-Buffering' => 'no',
         ]);
+    }
+
+    /**
+     * Downloads a just-generated image from a provider's temporary URL and
+     * stores it as a real ChatAttachment (same 'chat-attachments/{session}'
+     * disk location and serving route as a user-uploaded image), so the
+     * chat message that ends up referencing it stays valid regardless of
+     * how long the provider's own hosting keeps the original around.
+     * Returns null on any failure — the caller falls back to the raw URL,
+     * exactly today's behavior, rather than losing the reply entirely over
+     * a download hiccup.
+     */
+    private function persistGeneratedImage(ChatSession $session, string $prompt, string $url): ?ChatAttachment
+    {
+        try {
+            $response = Http::timeout(30)->get($url);
+            if (!$response->successful()) {
+                throw new \RuntimeException("download failed: HTTP {$response->status()}");
+            }
+
+            $mime = $response->header('Content-Type') ?: 'image/png';
+            $ext  = match (true) {
+                str_contains($mime, 'jpeg'), str_contains($mime, 'jpg') => 'jpg',
+                str_contains($mime, 'webp') => 'webp',
+                str_contains($mime, 'gif')  => 'gif',
+                default => 'png',
+            };
+
+            $path = "chat-attachments/{$session->id}/" . Str::uuid() . ".{$ext}";
+            Storage::disk('local')->put($path, $response->body());
+
+            return ChatAttachment::create([
+                'chat_session_id' => $session->id,
+                'type'            => 'image',
+                'original_name'   => 'AI: ' . mb_substr($prompt, 0, 80) . ".{$ext}",
+                'stored_path'     => $path,
+                'mime_type'       => $mime,
+                'size'            => strlen($response->body()),
+                'extracted_text'  => '',
+                'status'          => 'ready',
+            ]);
+        } catch (\Throwable $e) {
+            Log::warning("laraveleasyai: could not persist generated image locally, falling back to the provider's temporary URL: {$e->getMessage()}");
+            return null;
+        }
     }
 
     private function fireWebhook(ChatSession $session, string $userMessage, string $aiReply, string $provider): void
