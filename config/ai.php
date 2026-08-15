@@ -209,16 +209,14 @@ return [
          * AI::provider()->tools([...])->run() directly, which always
          * worked) is a bigger design question, left for a follow-up.
          *
-         * run() is non-streaming (see README's Agent Module "Scope note"
-         * and the v2.5.0 CHANGELOG entry) — so a request that ends up
-         * using tools necessarily loses the token-by-token typing effect
-         * for that one reply: it blocks until the full (possibly
-         * tool-augmented) answer is ready, then sends it as a single
-         * `data: {"text": "..."}` chunk, same as every other SSE event
-         * this endpoint emits. This is an accepted, honest tradeoff, not
-         * a bug — streaming a tool-calling loop's intermediate rounds
-         * isn't supported anywhere in this package yet (tracked as v2.7
-         * in the README roadmap).
+         * run() streams every step (v2.14, AbstractDriver::run()'s $onChunk
+         * param) — a request that ends up using a tool keeps the same
+         * token-by-token typing effect as the plain stream() path, for the
+         * final answer and for any text a turn produces before it decides
+         * to call a tool. Each driver's stream handler reassembles
+         * tool_calls from that provider's own incremental streaming format
+         * (previously the reason this only ever called the non-streaming
+         * chat() under the hood) — see AbstractDriver::run()'s own docblock.
          */
         'tools_enabled' => (bool) env('AI_CHAT_TOOLS_ENABLED', false),
 

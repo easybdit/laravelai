@@ -1,6 +1,6 @@
 # Changelog
 
-## v2.13.1 — 2026-08-16
+## v2.14.1 — 2026-08-16
 
 ### 🧹 Removed a dead duplicate file (`src/RAG/Console/RagIngestCommand.php`)
 
@@ -8,7 +8,34 @@ Flagged during a previous session as an unautoloadable copy-paste/incomplete-mov
 
 No behavior change for any install: the standard PSR-4 autoloader never found this file in the first place. Verified one concrete, if minor, real-world effect of removing it: `composer dump-autoload -o` (optimized/classmap autoloading, common in production) printed a "does not comply with psr-4 autoloading standard... Skipping" warning for this file on every build — gone now.
 
-264/264 tests passing (no test changes — nothing ever exercised the dead file).
+Also folds in a CI-only fix from the same batch of PRs: the `test-db-matrix` job (mysql/pgsql) was missing the Ghostscript + `imagick` setup the main `test` matrix got when PDF page-image vision (v2.13.0) shipped, so its imagick-gated tests failed there specifically with `ImagickException: Failed to read the file` instead of skipping cleanly. Fixed identically to the `test` job's own setup.
+
+270/270 tests passing (no test changes — nothing ever exercised the dead file).
+
+## v2.14.0 — 2026-08-16
+
+### 🌊 Streaming the agent module's final answer
+
+`run()`'s agent loop always made one blocking, non-streaming `chat()` call per round-trip — so a tool-using reply arrived as a single complete block once the whole loop resolved, never a live typing effect, even though a plain (no tools) reply had streamed token-by-token since v1. Flagged explicitly on the roadmap as deliberately not built (v2.7.0) because doing it right meant teaching all four drivers to reassemble a tool call from that provider's own real incremental streaming format first — not a small addition.
+
+```php
+$response = AI::provider('openai')->tools([$weather])->run(
+    $messages, 5, null,
+    fn (string $chunk) => print($chunk),
+);
+```
+
+New 4th `run()` parameter, `$onChunk` — every step streams instead of one `chat()` call per round-trip once it's given. `hasToolCalls()`/`getToolCalls()` work exactly the same regardless of which path produced the response, so the loop keeps executing tools correctly. Omit it (or pass `null`) for `run()`'s exact previous non-streaming behavior.
+
+Verified against each provider's own real documented (and, for Ollama, a real reported GitHub issue's) streaming format before writing a line of reassembly code — not assumed:
+- **OpenAI** (+ DeepSeek/Groq/Together/Custom, inherited): `delta.tool_calls[]` fragments, keyed by `index`; `id`/`function.name` arrive complete on that call's first delta, `function.arguments` arrives as a partial JSON *string* split across many deltas — concatenated by index, decoded once the stream ends.
+- **Anthropic**: `content_block_start` (id/name complete, empty `input: {}` placeholder) + one or more `content_block_delta`/`input_json_delta` events per block index, each carrying a `partial_json` string fragment — same concatenate-then-decode shape as OpenAI, different event names.
+- **Gemini**: a `functionCall` part arrives *whole* in a single chunk — Gemini streams a complete response structure per SSE event, not sub-field deltas, so no fragment reassembly is needed here at all.
+- **Ollama**: `message.tool_calls` also arrives whole in a single NDJSON line (`arguments` already a parsed object, not a string) — confirmed against a real reported streaming quirk (ollama/ollama#12557): the tool call lands in an earlier `done: false` line, followed by an *empty* final `done: true` line, not a gradually-built one.
+
+The built-in chat UI's `AI_CHAT_TOOLS_ENABLED` path now passes its own SSE echo callback as `$onChunk` — a tool-enabled reply in `/ai-chat` types out token-by-token exactly like every other reply now, not as one block after the loop resolves.
+
+6 new tests (`StreamingAgentTest.php`, one per provider plus a backward-compatibility check) using the real verified SSE/NDJSON shapes above, plus a new `ChatToolCallingTest` case locking in that the chat UI's SSE stream itself now emits several separate `text` events for one tool-using reply, not one. 270/270 tests passing (5 skip on a machine without `imagick`, unrelated to this change — see v2.13.0).
 
 ## v2.13.0 — 2026-08-16
 

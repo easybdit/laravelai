@@ -935,7 +935,18 @@ $this->app->bind(
 | Google Gemini | ✅ | |
 | Ollama | ✅ | Model-dependent — needs a tool-calling-capable model (e.g. `qwen3`, `llama3.1`); older/smaller models may ignore the tools list entirely |
 
-**Scope note:** `run()` is non-streaming by design — an agent loop's intermediate tool-call decisions aren't meaningfully "typed out" character by character the way a final answer is, so this uses the same request/response `chat()` path under the hood, not `stream()`. Investigated properly for v2.7.0 and deliberately not built yet: every driver's streaming handler currently only parses text/thinking deltas, never tool-call deltas — doing this right means teaching all four drivers to reassemble incremental tool-call fragments live (OpenAI's indexed argument chunks, Anthropic's `input_json_delta` blocks, etc.), a real body of work rather than a small addition. Staying on the roadmap as its own task rather than shipping a version that mishandles a tool call arriving mid-stream.
+**Streaming the loop:** pass a 4th argument and every step streams instead of one blocking `chat()` call per round-trip — the final answer (and any text a turn produces before it decides to call a tool) reaches you token-by-token, same as `stream()`:
+
+```php
+$response = AI::provider('openai')->tools([$weather])->run(
+    $messages,
+    maxSteps: 5,
+    onToolCall: null,                         // still available — see below
+    onChunk: fn (string $chunk) => print($chunk),
+);
+```
+
+Detecting a tool call is unaffected either way — each driver's stream handler reassembles `hasToolCalls()`/`getToolCalls()` from that provider's own real incremental format (OpenAI's indexed `delta.tool_calls` argument fragments, Anthropic's `input_json_delta` blocks keyed by content-block index, Gemini's whole `functionCall` parts, Ollama's whole `message.tool_calls`), so the loop keeps executing tools exactly the same regardless of which path produced the response. Omit `onChunk` (or pass `null`) for the exact non-streaming behavior `run()` always had.
 
 ### Using tools in the built-in chat UI
 
@@ -946,7 +957,7 @@ AI_CHAT_TOOLS_ENABLED=true
 AI_CHAT_ENABLED_TOOLS=web_search
 ```
 
-The chat window shows a collapsible "🔧 Used N tools" line (same visual pattern as the reasoning-model "Thinking…" indicator) when a reply used one. Honest tradeoff from the scope note above: a tool-enabled reply doesn't stream token-by-token the way a normal reply does — it arrives as one complete message once the agent loop resolves, not a live typing effect. Still no slower than a normal request, just not character-by-character.
+The chat window shows a collapsible "🔧 Used N tools" line (same visual pattern as the reasoning-model "Thinking…" indicator) when a reply used one, and — same as any other reply — the final answer types out token-by-token rather than arriving all at once.
 
 ---
 
@@ -1442,7 +1453,7 @@ Either way, the sidebar's identity line will pick up the resolved identity autom
 | v2.11.1 | Fix — `/image` replies mirrored into local attachment storage on generation, so they no longer go permanently broken once Together's temporary URL expires | ✅ Released |
 | v2.12 | Per-image export — ⬇ PNG / ⬇ JPEG / ⬇ PDF buttons on any reply that's just a generated image | ✅ Released |
 | v2.13 | PDF page-image vision (`pdf_vision_enabled`) — a PDF's actual pages, not just its extracted text, become real vision input for OpenAI/Anthropic/Gemini; multi-image vision support (was one image per message, max) | ✅ Released |
-| v2.14 | Streaming the agent module's final answer after the tool-call loop resolves | 🔜 Planned |
+| v2.14 | Streaming the agent module's final answer after the tool-call loop resolves — `run()`'s new `$onChunk` param, every driver's stream handler now reassembles tool calls from that provider's own real incremental format | ✅ Released |
 
 ---
 

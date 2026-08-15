@@ -10,8 +10,11 @@ use Illuminate\Support\Facades\Http;
 /**
  * Covers config('ai.chat.tools_enabled') — wiring the agent module's
  * tool/function calling into the built-in /ai-chat SSE stream (v2.7.0).
- * See config('ai.chat.tools_enabled')'s docblock for the accepted
- * non-streaming tradeoff when a request actually uses a tool.
+ * Since v2.14 the final answer streams token-by-token here too (see
+ * StreamingAgentTest.php for the underlying AbstractDriver::run()
+ * $onChunk coverage across all 4 providers) — this file's own
+ * test_enabled_tools_final_answer_streams_token_by_token() locks that in
+ * at the /ai-chat/api/stream endpoint level specifically.
  */
 class ChatToolCallingTest extends TestCase
 {
@@ -96,6 +99,58 @@ class ChatToolCallingTest extends TestCase
             'chat_session_id' => $session->id,
             'role'            => 'assistant',
             'content'         => 'Here is the latest Laravel news.',
+        ]);
+    }
+
+    /**
+     * Locks in the fix itself: before AbstractDriver::run()'s $onChunk
+     * param existed, a tool-using reply's final answer arrived as exactly
+     * one "data: {"text": "..."}" event (the whole thing, only after run()
+     * finished completely) — now it arrives as several, one per streamed
+     * chunk, same as the plain (no tools) streaming path always has.
+     */
+    public function test_enabled_tools_final_answer_streams_token_by_token(): void
+    {
+        config([
+            'ai.chat.tools_enabled' => true,
+            'ai.chat.enabled_tools' => ['web_search'],
+        ]);
+
+        Http::fake([
+            '127.0.0.1:11434/api/chat' => Http::sequence()
+                ->push(implode("\n", [
+                    json_encode(['message' => ['tool_calls' => [
+                        ['function' => ['name' => 'web_search', 'arguments' => ['query' => 'laravel news']]],
+                    ]], 'done' => false]),
+                    json_encode(['message' => ['content' => ''], 'done' => true]),
+                ]) . "\n")
+                ->push(implode("\n", [
+                    json_encode(['message' => ['content' => 'Here '], 'done' => false]),
+                    json_encode(['message' => ['content' => 'is '], 'done' => false]),
+                    json_encode(['message' => ['content' => 'the news.'], 'done' => true]),
+                ]) . "\n"),
+        ]);
+
+        $session = ChatSession::create(['title' => 'Existing Session']);
+
+        $response = $this->call('POST', '/ai-chat/api/stream', [
+            'message'    => 'Any Laravel news?',
+            'session_id' => $session->id,
+        ], [], [], ['HTTP_ACCEPT' => 'text/event-stream']);
+
+        $response->assertOk();
+        $content = $response->streamedContent();
+
+        $textEvents = array_filter(
+            explode("\n\n", $content),
+            fn ($event) => str_starts_with($event, 'data: ') && str_contains($event, '"text"')
+        );
+
+        $this->assertGreaterThanOrEqual(3, count($textEvents), 'The final answer should arrive as several separate text events, not one.');
+        $this->assertDatabaseHas('ai_chat_messages', [
+            'chat_session_id' => $session->id,
+            'role'            => 'assistant',
+            'content'         => 'Here is the news.',
         ]);
     }
 

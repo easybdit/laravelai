@@ -121,10 +121,26 @@ class OpenAIDriver extends AbstractDriver
         }
     }
 
+    /**
+     * Also reassembles tool_calls from delta.tool_calls fragments — needed
+     * so AbstractDriver::run() can stream every turn (not just detect a
+     * final text-only answer after the fact) without losing the ability to
+     * detect and execute a tool call. Confirmed against OpenAI's own docs:
+     * each delta.tool_calls entry carries an 'index' identifying which
+     * call it belongs to (parallel tool calls share one stream, distinguished
+     * by index); id/type/function.name arrive complete in that call's first
+     * delta, function.arguments arrives as a partial JSON *string* split
+     * across many deltas — concatenate by index, JSON-decode only once the
+     * stream ends. Same "arrives as fragments" characteristic Anthropic's
+     * input_json_delta has, different field names.
+     */
     protected function handleStream(string $url, array $body): AIResponseInterface
     {
         $callback = $this->streamCallback;
         $fullContent = '';
+        $model = $this->currentModel;
+        /** @var array<int, array{id: ?string, name: string, arguments: string}> $toolCallAccum */
+        $toolCallAccum = [];
 
         $response = Http::timeout($this->getTimeout())
             ->withToken($this->config['api_key'])
@@ -134,39 +150,80 @@ class OpenAIDriver extends AbstractDriver
         $stream = $response->toPsrResponse()->getBody();
         $buffer = '';
 
+        $handleLine = function (string $line) use ($callback, &$fullContent, &$model, &$toolCallAccum) {
+            $line = trim($line);
+            if (!str_starts_with($line, 'data: ')) {
+                return;
+            }
+            $data = substr($line, 6);
+            if ($data === '[DONE]') {
+                return;
+            }
+            $json = json_decode($data, true);
+            if (!$json) {
+                return;
+            }
+
+            $model = $json['model'] ?? $model;
+            $delta = $json['choices'][0]['delta'] ?? [];
+
+            $chunk = $delta['content'] ?? '';
+            if ($chunk !== '') {
+                $fullContent .= $chunk;
+                $callback($chunk);
+            }
+
+            foreach ($delta['tool_calls'] ?? [] as $tc) {
+                $i = $tc['index'] ?? 0;
+                $toolCallAccum[$i] ??= ['id' => null, 'name' => '', 'arguments' => ''];
+                if (isset($tc['id'])) {
+                    $toolCallAccum[$i]['id'] = $tc['id'];
+                }
+                $toolCallAccum[$i]['name']      .= $tc['function']['name'] ?? '';
+                $toolCallAccum[$i]['arguments'] .= $tc['function']['arguments'] ?? '';
+            }
+        };
+
         while (!$stream->eof()) {
             $buffer .= $stream->read(1024);
             $lines = explode("\n", $buffer);
             $buffer = array_pop($lines);
 
             foreach ($lines as $line) {
-                $line = trim($line);
-                if (!str_starts_with($line, 'data: ')) continue;
-
-                $data = substr($line, 6);
-                if ($data === '[DONE]') break;
-
-                $json = json_decode($data, true);
-                if (!$json) continue;
-
-                $chunk = $json['choices'][0]['delta']['content'] ?? '';
-                if ($chunk !== '') {
-                    $fullContent .= $chunk;
-                    $callback($chunk);
-                }
+                $handleLine($line);
             }
         }
 
         // A final "data: ..." line with no trailing newline (arrives in the
         // same read() that hits EOF) would otherwise sit in $buffer unparsed.
-        $line = trim($buffer);
-        if (str_starts_with($line, 'data: ') && substr($line, 6) !== '[DONE]') {
-            $json = json_decode(substr($line, 6), true);
-            $chunk = $json['choices'][0]['delta']['content'] ?? '';
-            if ($chunk !== '') {
-                $fullContent .= $chunk;
-                $callback($chunk);
+        $handleLine($buffer);
+
+        $toolCalls = [];
+        $rawAssistantMessage = null;
+        if ($toolCallAccum) {
+            ksort($toolCallAccum); // preserve call order, not accumulation-completion order
+            $wireToolCalls = [];
+            foreach ($toolCallAccum as $tc) {
+                $toolCalls[] = new ToolCall(
+                    id:        $tc['id'],
+                    name:      $tc['name'],
+                    arguments: json_decode($tc['arguments'], true) ?: [],
+                );
+                // Same shape doChat()'s non-streaming $message would have had —
+                // appendToolExchange() replays this back verbatim, and OpenAI's
+                // wire format expects function.arguments as the raw JSON string,
+                // not the decoded array ToolCall itself carries.
+                $wireToolCalls[] = [
+                    'id'       => $tc['id'],
+                    'type'     => 'function',
+                    'function' => ['name' => $tc['name'], 'arguments' => $tc['arguments']],
+                ];
             }
+            $rawAssistantMessage = [
+                'role'       => 'assistant',
+                'content'    => $fullContent !== '' ? $fullContent : null,
+                'tool_calls' => $wireToolCalls,
+            ];
         }
 
         // Must read before resetOverrides() below clears currentFormat.
@@ -174,13 +231,15 @@ class OpenAIDriver extends AbstractDriver
         $this->resetOverrides();
 
         return new AIResponse(
-            content:          $fullContent,
-            promptTokens:     $this->estimateTokens(json_encode($body['messages'])),
-            completionTokens: $this->estimateTokens($fullContent),
-            model:            $this->currentModel,
-            provider:         $this->getProviderName(),
-            raw:              [],
-            structured:       $structured,
+            content:             $fullContent,
+            promptTokens:        $this->estimateTokens(json_encode($body['messages'])),
+            completionTokens:    $this->estimateTokens($fullContent),
+            model:               $model,
+            provider:            $this->getProviderName(),
+            raw:                 [],
+            toolCalls:           $toolCalls,
+            rawAssistantMessage: $rawAssistantMessage,
+            structured:          $structured,
         );
     }
 

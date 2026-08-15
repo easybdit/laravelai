@@ -238,6 +238,15 @@ echo $response->content; // "It's currently 22°C and sunny in Paris."
 
 `run()` (not `chat()`) drives the whole loop — sends your message, executes whichever tool the model asks for, feeds the result back, repeats up to 5 round-trips by default (`run($messages, maxSteps: 10)` to raise it). Works the same across OpenAI, Anthropic, Gemini, and Ollama (model-dependent there — needs a tool-calling-capable model like `qwen3`).
 
+Want the final answer to type out token-by-token instead of arriving all at once? Pass a 4th argument:
+
+```php
+$response = AI::provider('openai')->tools([$weather])->run(
+    $messages, 5, null,
+    fn (string $chunk) => print($chunk),
+);
+```
+
 Built-in web search tool, so an agent isn't limited to its training data:
 
 ```php

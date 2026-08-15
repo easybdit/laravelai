@@ -315,16 +315,26 @@ abstract class AbstractDriver implements AIProviderInterface
      * normal one — the caller gets the same ['error' => ...] shape execute()
      * would otherwise catch. Purely additive: omitted (null, the default),
      * this is a no-op and run() behaves exactly as before.
+     *
+     * $onChunk (optional): when given, every step streams instead of a
+     * single non-streaming chat() call — see AIProviderInterface::run()'s
+     * own docblock for why a turn that requests a tool is still detected
+     * correctly even while streaming. Each driver's stream handler already
+     * reassembles tool_calls from that provider's own incremental format
+     * (delta.tool_calls for OpenAI-family, content_block_delta/
+     * input_json_delta for Anthropic, functionCall parts for Gemini,
+     * message.tool_calls for Ollama) — hasToolCalls() below works exactly
+     * the same regardless of which path produced the response.
      */
-    public function run(array $messages, int $maxSteps = 5, ?callable $onToolCall = null): AIResponseInterface
+    public function run(array $messages, int $maxSteps = 5, ?callable $onToolCall = null, ?callable $onChunk = null): AIResponseInterface
     {
         $tools    = $this->currentTools;
         $maxSteps = max(1, $maxSteps);
         $response = null;
 
         for ($step = 0; $step < $maxSteps; $step++) {
-            $this->currentTools = $tools; // chat() resets this via resetOverrides() each call
-            $response = $this->chat($messages);
+            $this->currentTools = $tools; // chat()/stream() reset this via resetOverrides() each call
+            $response = $onChunk !== null ? $this->stream($messages, $onChunk) : $this->chat($messages);
 
             if (!$response->hasToolCalls()) {
                 return $response;
