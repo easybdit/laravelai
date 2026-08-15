@@ -156,4 +156,108 @@ class SettingsTest extends TestCase
 
         $response->assertOk()->assertJson(['ok' => true]);
     }
+
+    public function test_web_search_tab_is_present_on_the_settings_page(): void
+    {
+        Gate::define('manage-ai-settings', fn () => true);
+        $this->actingAs($this->fakeUser());
+
+        $this->get('/ai-chat/settings')->assertOk()->assertSee('Web Search');
+    }
+
+    public function test_enabling_web_search_and_saving_a_tavily_key_overrides_config_immediately(): void
+    {
+        Gate::define('manage-ai-settings', fn () => true);
+        $this->actingAs($this->fakeUser());
+
+        $this->post('/ai-chat/settings', [
+            'default_provider'   => 'ollama',
+            'web_search_enabled' => '1',
+            'web_search'         => ['provider' => 'tavily', 'tavily_api_key' => 'tvly-test-key'],
+        ])->assertRedirect();
+
+        $this->assertDatabaseHas('ai_settings', ['key' => 'ai.chat.tools_enabled']);
+        $this->assertDatabaseHas('ai_settings', ['key' => 'ai.agent.web_search.tavily.api_key']);
+
+        SettingsOverlay::apply();
+        $this->assertTrue(config('ai.chat.tools_enabled'));
+        $this->assertSame('tavily', config('ai.agent.web_search.provider'));
+        $this->assertSame('tvly-test-key', config('ai.agent.web_search.tavily.api_key'));
+    }
+
+    /** Same encryption guarantee as every provider api_key — verified separately here since web search keys go through a different save path (updateWebSearchSettings()), not the generic PROVIDER_FIELDS loop. */
+    public function test_web_search_keys_are_encrypted_at_rest_too(): void
+    {
+        Gate::define('manage-ai-settings', fn () => true);
+        $this->actingAs($this->fakeUser());
+
+        $this->post('/ai-chat/settings', [
+            'default_provider' => 'ollama',
+            'web_search'       => ['tavily_api_key' => 'tvly-super-secret'],
+        ])->assertRedirect();
+
+        $stored = AiSetting::where('key', 'ai.agent.web_search.tavily.api_key')->first();
+        $this->assertNotNull($stored);
+        $this->assertStringNotContainsString('tvly-super-secret', $stored->getRawOriginal('value'));
+    }
+
+    public function test_submitting_the_masked_web_search_key_placeholder_does_not_overwrite_it(): void
+    {
+        Gate::define('manage-ai-settings', fn () => true);
+        $this->actingAs($this->fakeUser());
+        AiSetting::create(['key' => 'ai.agent.web_search.tavily.api_key', 'value' => json_encode('tvly-original')]);
+        SettingsOverlay::forgetCache();
+
+        // Unlike ai.providers.openai.api_key (which the test app's own base
+        // config already sets to a truthy 'test-key' default, so its
+        // equivalent test above renders *some* masked value regardless),
+        // there's no such baseline for a web-search key — genuinely null
+        // until SettingsOverlay actually re-applies this freshly created
+        // row. forgetCache() alone only clears the cached DB read;
+        // ChatServiceProvider::boot() already ran once during setUp()
+        // before this row existed, so apply() needs a real second call
+        // here for the row to reach config() before the page renders it.
+        SettingsOverlay::apply();
+
+        $html = $this->get('/ai-chat/settings')->getContent();
+        preg_match('/name="web_search\[tavily_api_key\]"\s+value="([^"]+)"/s', $html, $m);
+        $this->assertNotEmpty($m, 'Could not find the masked web search key field in the rendered page.');
+
+        $this->post('/ai-chat/settings', [
+            'default_provider' => 'ollama',
+            'web_search'       => ['tavily_api_key' => $m[1]],
+        ])->assertRedirect();
+
+        SettingsOverlay::apply();
+        $this->assertSame('tvly-original', config('ai.agent.web_search.tavily.api_key'));
+    }
+
+    public function test_switching_web_search_provider_to_brave_saves_correctly(): void
+    {
+        Gate::define('manage-ai-settings', fn () => true);
+        $this->actingAs($this->fakeUser());
+
+        $this->post('/ai-chat/settings', [
+            'default_provider' => 'ollama',
+            'web_search'        => ['provider' => 'brave', 'brave_api_key' => 'brave-test-key'],
+        ])->assertRedirect();
+
+        SettingsOverlay::apply();
+        $this->assertSame('brave', config('ai.agent.web_search.provider'));
+        $this->assertSame('brave-test-key', config('ai.agent.web_search.brave.api_key'));
+    }
+
+    public function test_blanking_a_web_search_key_deletes_its_stored_override(): void
+    {
+        Gate::define('manage-ai-settings', fn () => true);
+        $this->actingAs($this->fakeUser());
+        AiSetting::create(['key' => 'ai.agent.web_search.tavily.api_key', 'value' => json_encode('tvly-old')]);
+
+        $this->post('/ai-chat/settings', [
+            'default_provider' => 'ollama',
+            'web_search'       => ['tavily_api_key' => ''],
+        ])->assertRedirect();
+
+        $this->assertDatabaseMissing('ai_settings', ['key' => 'ai.agent.web_search.tavily.api_key']);
+    }
 }

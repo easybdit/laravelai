@@ -55,10 +55,7 @@ class SettingsController extends Controller
         $providers = [];
         foreach (self::PROVIDER_FIELDS as $name => $fields) {
             foreach ($fields as $field) {
-                $value = config("ai.providers.{$name}.{$field}");
-                $providers[$name][$field] = (in_array($field, self::SECRET_FIELDS, true) && $value)
-                    ? self::MASK . mb_substr((string) $value, -4)
-                    : $value;
+                $providers[$name][$field] = $this->maskIfSecret($field, config("ai.providers.{$name}.{$field}"));
             }
         }
 
@@ -76,8 +73,21 @@ class SettingsController extends Controller
                 'currentUserId'       => (int) $request->user()->getAuthIdentifier(),
                 'usageLoggingEnabled' => (bool) config('ai.usage_logging.enabled', false),
                 'usage'               => $this->usageStats(),
+                'webSearch'           => [
+                    'enabled'        => (bool) config('ai.chat.tools_enabled', false),
+                    'provider'       => config('ai.agent.web_search.provider', 'tavily'),
+                    'tavily_api_key' => $this->maskIfSecret('api_key', config('ai.agent.web_search.tavily.api_key')),
+                    'brave_api_key'  => $this->maskIfSecret('api_key', config('ai.agent.web_search.brave.api_key')),
+                ],
             ])
             ->header('Cache-Control', 'no-store, private');
+    }
+
+    private function maskIfSecret(string $field, mixed $value): mixed
+    {
+        return (in_array($field, self::SECRET_FIELDS, true) && $value)
+            ? self::MASK . mb_substr((string) $value, -4)
+            : $value;
     }
 
     /**
@@ -226,9 +236,50 @@ class SettingsController extends Controller
             }
         }
 
+        $this->updateWebSearchSettings($request);
+
         SettingsOverlay::forgetCache();
 
         return redirect()->route('ai-chat.settings.edit')->with('status', 'Settings saved.');
+    }
+
+    /**
+     * Web search is a single chat-wide toggle plus which of the two
+     * built-in providers (Tavily/Brave) to use, not a per-AI-provider
+     * field, so it doesn't fit PROVIDER_FIELDS' shape — handled separately
+     * here rather than forcing it into that loop. Only the key belonging
+     * to whichever provider is actually selected does anything at
+     * runtime (WebSearchTool::resolveProvider()), but both are saved so
+     * switching providers later doesn't require re-entering a key you'd
+     * already typed in once.
+     */
+    private function updateWebSearchSettings(Request $request): void
+    {
+        $this->save('ai.chat.tools_enabled', $request->input('web_search_enabled') === '1');
+
+        if ($request->filled('web_search.provider')) {
+            $this->save('ai.agent.web_search.provider', $request->input('web_search.provider'));
+        }
+
+        foreach (['tavily', 'brave'] as $provider) {
+            $field = "web_search.{$provider}_api_key";
+            if (!$request->has($field)) {
+                continue;
+            }
+
+            $input = trim((string) $request->input($field));
+            if (str_starts_with($input, self::MASK)) {
+                continue;
+            }
+
+            $key = "ai.agent.web_search.{$provider}.api_key";
+            if ($input === '') {
+                AiSetting::where('key', $key)->delete();
+                continue;
+            }
+
+            $this->save($key, $input);
+        }
     }
 
     /**
