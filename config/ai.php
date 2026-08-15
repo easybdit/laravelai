@@ -352,6 +352,26 @@ return [
             'max_doc_mb'       => (int) env('AI_CHAT_ATTACHMENTS_MAX_DOC_MB', 10),
             'allowed_images'   => ['png', 'jpg', 'jpeg', 'webp', 'gif'],
             'allowed_docs'     => ['txt', 'md', 'pdf'],
+
+            /**
+             * Opt-in, off by default, and requires the PHP `imagick`
+             * extension (with a Ghostscript delegate) — neither is a normal
+             * PHP install default, so this stays off until you actually
+             * have it. When on, an uploaded PDF also gets rendered to a
+             * page image per page (up to pdf_vision_max_pages) via
+             * PdfPageRenderer; those images ride along as real vision
+             * input for VISION_PROVIDERS the next time this PDF is
+             * attached to a message — on top of the plain-text extraction
+             * every PDF already gets regardless of this setting. Genuinely
+             * useful for a PDF where the actual content lives in a chart,
+             * diagram, scanned table, or photo, not the extractable text
+             * layer — text extraction alone is blind to exactly that.
+             * PdfPageRenderer throws a clear "composer/extension needed"
+             * message rather than failing silently if imagick isn't
+             * actually installed when this is turned on.
+             */
+            'pdf_vision_enabled'   => (bool) env('AI_CHAT_PDF_VISION_ENABLED', false),
+            'pdf_vision_max_pages' => (int) env('AI_CHAT_PDF_VISION_MAX_PAGES', 5),
         ],
 
         /**

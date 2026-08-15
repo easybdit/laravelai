@@ -63,6 +63,40 @@ class MessageFormatterTest extends TestCase
         $this->assertSame(['type' => 'image', 'mime' => 'image/png', 'data' => 'base64data'], $content[1]);
     }
 
+    public function test_with_images_builds_multipart_content_for_more_than_one_image(): void
+    {
+        $content = MessageFormatter::withImages('What are these?', [
+            ['mime' => 'image/png', 'data' => 'page1data'],
+            ['mime' => 'image/png', 'data' => 'page2data'],
+        ]);
+
+        $this->assertCount(3, $content); // 1 text block + 2 image blocks
+        $this->assertSame(['type' => 'text', 'text' => 'What are these?'], $content[0]);
+        $this->assertSame(['type' => 'image', 'mime' => 'image/png', 'data' => 'page1data'], $content[1]);
+        $this->assertSame(['type' => 'image', 'mime' => 'image/png', 'data' => 'page2data'], $content[2]);
+    }
+
+    public function test_with_image_is_equivalent_to_with_images_of_one(): void
+    {
+        $this->assertSame(
+            MessageFormatter::withImage('Describe this', 'abc', 'image/png'),
+            MessageFormatter::withImages('Describe this', [['mime' => 'image/png', 'data' => 'abc']])
+        );
+    }
+
+    public function test_to_provider_content_translates_multiple_images_for_openai(): void
+    {
+        $messages = [['role' => 'user', 'content' => MessageFormatter::withImages('Compare these', [
+            ['mime' => 'image/png', 'data' => 'first'],
+            ['mime' => 'image/png', 'data' => 'second'],
+        ])]];
+        $result = MessageFormatter::toProviderContent($messages, 'openai');
+
+        $this->assertCount(3, $result[0]['content']);
+        $this->assertSame('data:image/png;base64,first', $result[0]['content'][1]['image_url']['url']);
+        $this->assertSame('data:image/png;base64,second', $result[0]['content'][2]['image_url']['url']);
+    }
+
     public function test_to_provider_content_translates_for_openai(): void
     {
         $messages = [['role' => 'user', 'content' => MessageFormatter::withImage('What is this?', 'abc', 'image/png')]];

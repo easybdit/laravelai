@@ -1,6 +1,6 @@
 # Changelog
 
-## v2.13.0 — 2026-08-16
+## v2.14.0 — 2026-08-16
 
 ### 🌊 Streaming the agent module's final answer
 
@@ -23,7 +23,30 @@ Verified against each provider's own real documented (and, for Ollama, a real re
 
 The built-in chat UI's `AI_CHAT_TOOLS_ENABLED` path now passes its own SSE echo callback as `$onChunk` — a tool-enabled reply in `/ai-chat` types out token-by-token exactly like every other reply now, not as one block after the loop resolves.
 
-6 new tests (`StreamingAgentTest.php`, one per provider plus a backward-compatibility check) using the real verified SSE/NDJSON shapes above, plus a new `ChatToolCallingTest` case locking in that the chat UI's SSE stream itself now emits several separate `text` events for one tool-using reply, not one. 259/259 tests passing.
+6 new tests (`StreamingAgentTest.php`, one per provider plus a backward-compatibility check) using the real verified SSE/NDJSON shapes above, plus a new `ChatToolCallingTest` case locking in that the chat UI's SSE stream itself now emits several separate `text` events for one tool-using reply, not one. 270/270 tests passing (5 skip on a machine without `imagick`, unrelated to this change — see v2.13.0).
+
+## v2.13.0 — 2026-08-16
+
+### 🖼️ See what's *inside* a PDF — page-image vision + multi-image support
+
+Plain text extraction (every uploaded PDF, unconditionally, since v2.0.0) is blind to a chart, diagram, scanned table, or photo embedded in a PDF — there's no text layer there to extract from. New opt-in setting closes that gap:
+
+```env
+AI_CHAT_PDF_VISION_ENABLED=true
+AI_CHAT_PDF_VISION_MAX_PAGES=5
+```
+
+When on, an uploaded PDF also gets each page rendered to a PNG (`PdfPageRenderer`, via the PHP `imagick` extension — a real system-level dependency, not a composer package; needs a Ghostscript delegate for PDF support). Those page images ride along as genuine vision input the next time that PDF is attached to a message, on top of the plain text every PDF already gets regardless of this setting — no separate upload, no attachment IDs the frontend has to know about, just the one PDF the user actually picked. Off by default; a missing `imagick` when it's turned on fails clearly (upload still succeeds, extracted text still attaches, a warning is logged) rather than silently or fatally.
+
+This needed real **multi-image vision support** first — `resolveAttachments()` previously picked at most one image per message, full stop (`MessageFormatter::withImage()`'s own signature enforced it). `withImages()` (plural) generalizes it; `withImage()` is now a one-image call to it, unchanged for every existing caller. Up to 6 images total ride along per message — a direct upload and a PDF's rendered pages can even mix together.
+
+Deleting a PDF attachment now cascades to its rendered pages (`parent_attachment_id`) — they'd have orphaned otherwise, since the frontend never has a delete button of its own for a page it doesn't know exists.
+
+Testing an environment-gated system dependency honestly: `PdfPageRendererTest`/`ChatAttachmentTest`'s imagick-dependent cases skip with a clear reason on a machine without it (confirmed real behavior on this session's own dev machine, which has none) and run for real in CI, where `.github/workflows/tests.yml`'s `test` matrix now installs `imagick` + Ghostscript specifically so this isn't guessed-at code. The multi-image wiring itself (`MessageFormatter`, `resolveAttachments()`) needs no real PDF rendering to verify and is fully covered on every machine.
+
+Also fixed in passing: `smalot/pdfparser` (real PDF text extraction) was only ever in `composer.json`'s `suggest`, never `require-dev` like every other optional-feature dependency here — meaning no test had ever exercised a real PDF upload through `ChatAttachmentController` before this session's tests were the first to try. Added to `require-dev`, matching `dompdf`/`phpword`/`phpspreadsheet`/`phppresentation`.
+
+264/264 tests passing (11 new; 5 skip on a machine without `imagick`, verified for real in CI).
 
 ## v2.12.0 — 2026-08-15
 
