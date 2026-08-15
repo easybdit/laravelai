@@ -594,6 +594,10 @@ composer require phpoffice/phppresentation  # PowerPoint (.pptx) — one slide p
 
 Not installed yet? The download attempt shows exactly which command to run instead of failing silently. PowerPoint is the odd one out of the four — slides don't paginate long text the way a document does, so it suits short conversations best; PDF or Word read better for a long transcript.
 
+### Exporting a generated image — PNG, JPEG, or PDF
+
+A reply that's *only* a generated picture (the `/image` command's output — see [Image generation](SETUP_GUIDE.md#8-image-generation)) gets its own export buttons instead of the generic "save as .txt": ⬇ PNG, ⬇ JPEG, ⬇ PDF, right on that message. Zero extra dependencies — PNG/JPEG are re-encoded client-side through a `<canvas>` (so the download always genuinely matches the extension, whatever format the server actually stored), and PDF opens the browser's own print dialog pre-sized to just the image — "Save as PDF" is a built-in destination there on effectively every modern browser, no PDF-writing library needed for one picture.
+
 ## 📎 Attachments & Vision
 
 > **New in v2.0.0** — `AI_CHAT_ATTACHMENTS_ENABLED=true`
@@ -1419,7 +1423,9 @@ Either way, the sidebar's identity line will pick up the resolved identity autom
 | v2.10 | Together AI's `image_enabled`/model/size/steps fields exposed in the Settings UI, not just `.env` | ✅ Released |
 | v2.10.1 | Fix — Together's default image model (`FLUX.1-schnell-Free`) 400s on every account; the promotional endpoint isn't live on Together's Serverless API yet | ✅ Released |
 | v2.11 | Persisted usage & cost tracking (`ai_usage_logs`) — a "Usage & Costs" tab on the Settings page, covering every provider's chat *and* image calls | ✅ Released |
-| v2.12 | Streaming the agent module's final answer after the tool-call loop resolves | 🔜 Planned |
+| v2.11.1 | Fix — `/image` replies mirrored into local attachment storage on generation, so they no longer go permanently broken once Together's temporary URL expires | ✅ Released |
+| v2.12 | Per-image export — ⬇ PNG / ⬇ JPEG / ⬇ PDF buttons on any reply that's just a generated image | ✅ Released |
+| v2.13 | Streaming the agent module's final answer after the tool-call loop resolves | 🔜 Planned |
 
 ---
 
