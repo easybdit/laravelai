@@ -36,6 +36,14 @@ return [
             // data:image/...;base64 string instead of a URL — meaningfully
             // larger if you store the resulting chat message.
             'image_model' => env('AI_OPENAI_IMAGE_MODEL', 'dall-e-3'),
+            // Off by default, same posture as Together's own image_enabled —
+            // image generation is billed separately from chat and shouldn't
+            // turn on just because an OpenAI key is configured. Once on, the
+            // chat UI's /image and /img commands use OpenAI's own model
+            // whenever OpenAI is the active chat provider (see
+            // AIChatController::resolveImageProvider()), or as the fallback
+            // when it isn't but Together's image_enabled is off.
+            'image_enabled' => (bool) env('AI_OPENAI_IMAGE_ENABLED', false),
             // ->transcribe() / ->textToSpeech()
             'transcribe_model' => env('AI_OPENAI_TRANSCRIBE_MODEL', 'whisper-1'),
             'tts_model'        => env('AI_OPENAI_TTS_MODEL', 'tts-1'),

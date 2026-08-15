@@ -99,6 +99,85 @@ class ImageCommandTest extends TestCase
         );
     }
 
+    /**
+     * resolveImageProvider() prefers the session's currently active chat
+     * provider when it's image-capable and enabled — so /image while
+     * chatting with OpenAI actually calls OpenAI's own image model, not a
+     * silently different provider the user never picked. Together is also
+     * enabled here to prove OpenAI genuinely wins because it's the active
+     * provider, not just because it's the only option.
+     */
+    public function test_image_command_uses_the_active_chat_provider_when_it_is_image_capable(): void
+    {
+        Storage::fake('local');
+        config([
+            'ai.providers.openai.image_enabled' => true,
+            'ai.providers.openai.api_key'       => 'test-key',
+            'ai.providers.together.image_enabled' => true,
+            'ai.providers.together.api_key'       => 'test-key',
+        ]);
+
+        Http::fake([
+            'api.openai.com/v1/images/generations' => Http::response([
+                'data' => [['url' => 'https://openai.example/temp/dalle-generated.png']],
+            ]),
+            'openai.example/temp/dalle-generated.png' => Http::response(
+                'fake-png-bytes', 200, ['Content-Type' => 'image/png']
+            ),
+            'api.together.xyz/v1/images/generations' => Http::response([
+                'data' => [['url' => 'https://together.example/temp/flux-generated.png']],
+            ]),
+        ]);
+
+        $session = ChatSession::create(['title' => 'New Chat', 'provider' => 'openai']);
+        $content = $this->streamImage($session, 'a red fox in snow');
+
+        $this->assertStringContainsString('[DONE]', $content);
+        Http::assertSent(fn ($request) => str_contains($request->url(), 'api.openai.com/v1/images/generations'));
+        Http::assertNotSent(fn ($request) => str_contains($request->url(), 'api.together.xyz/v1/images/generations'));
+    }
+
+    /** Together stays the fallback when the active provider isn't image-capable at all (e.g. Ollama) — today's original behavior, unchanged. */
+    public function test_image_command_falls_back_to_together_when_active_provider_cannot_generate_images(): void
+    {
+        Storage::fake('local');
+        $this->enableTogetherImages();
+
+        Http::fake([
+            'api.together.xyz/v1/images/generations' => Http::response([
+                'data' => [['url' => 'https://together.example/temp/flux-generated.png']],
+            ]),
+            'together.example/temp/flux-generated.png' => Http::response(
+                'fake-png-bytes', 200, ['Content-Type' => 'image/png']
+            ),
+        ]);
+
+        $session = ChatSession::create(['title' => 'New Chat', 'provider' => 'ollama']);
+        $content = $this->streamImage($session, 'a red fox in snow');
+
+        $this->assertStringContainsString('[DONE]', $content);
+        Http::assertSent(fn ($request) => str_contains($request->url(), 'api.together.xyz/v1/images/generations'));
+    }
+
+    /** With no provider's image_enabled on, "/image ..." is just literal chat text — same as today, no interception at all. */
+    public function test_image_command_is_left_as_plain_chat_text_when_no_provider_has_image_generation_enabled(): void
+    {
+        config([
+            'ai.providers.together.image_enabled' => false,
+            'ai.providers.openai.image_enabled'   => false,
+            'ai.providers.ollama.url'              => 'http://ollama.test',
+        ]);
+
+        Http::fake([
+            'ollama.test/*' => Http::response(['message' => ['content' => 'ok'], 'done' => true], 200),
+        ]);
+
+        $session = ChatSession::create(['title' => 'New Chat', 'provider' => 'ollama']);
+        $this->streamImage($session, 'a red fox in snow');
+
+        Http::assertNotSent(fn ($request) => str_contains($request->url(), '/images/generations'));
+    }
+
     public function test_download_failure_falls_back_to_the_provider_url_without_crashing(): void
     {
         Storage::fake('local');
