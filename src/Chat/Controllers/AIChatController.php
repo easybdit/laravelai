@@ -854,6 +854,24 @@ class AIChatController extends Controller
             // this existed.
             $tools = config('ai.chat.tools_enabled', false) ? $this->enabledTools() : [];
 
+            // A failed turn used to leave $fullReply empty, so nothing got
+            // saved below and the shutdown safety-net above also no-ops on
+            // an empty reply — the user's message (already saved earlier)
+            // was left as an orphaned, unpaired turn with no assistant
+            // reply after it. Found live: the *next* message then replays
+            // that broken alternation as history, which on Ollama made an
+            // otherwise-sensible model (qwen3:8b) call the web_search tool
+            // for a plain "hi" — it was still trying to resolve the
+            // previous, never-answered question. On providers that
+            // strictly enforce alternating user/assistant roles (OpenAI,
+            // Anthropic) the same gap could error the next turn outright
+            // instead of just confusing it. Persisting a placeholder here
+            // — same "⚠ " text the client already renders live, so nothing
+            // about what the user sees changes — keeps history honest for
+            // whatever comes next, and means reloading the page no longer
+            // makes the error vanish (today it's a client-side-only echo,
+            // never saved).
+            $turnFailed = false;
             try {
                 if (!empty($tools)) {
                     AI::provider($provider)
@@ -865,10 +883,6 @@ class AIChatController extends Controller
                             $history,
                             (int) config('ai.agent.max_steps', 5),
                             function ($call, $result) {
-                                // Fired right after each tool executes (see
-                                // AbstractDriver::run()'s $onToolCall) — a
-                                // distinct SSE event so the frontend can show
-                                // a live "used a tool" status line.
                                 echo "data: " . json_encode(['tool_call' => [
                                     'name'      => $call->name,
                                     'arguments' => $call->arguments,
@@ -876,14 +890,6 @@ class AIChatController extends Controller
                                 if (ob_get_level() > 0) { ob_flush(); }
                                 flush();
                             },
-                            // $onChunk: every step streams now, including the
-                            // final answer — reaches the browser token by
-                            // token as it's generated instead of arriving as
-                            // one block only after the whole turn finishes.
-                            // Same 'thinking' vs 'content' handling as the
-                            // plain ->stream() branch below, since a
-                            // reasoning model can still think out loud on any
-                            // step, tool-calling or not.
                             function (string $chunk, string $type = 'content') use (&$fullReply) {
                                 if ($type === 'thinking') {
                                     echo "data: " . json_encode(['thinking' => $chunk]) . "\n\n";
@@ -903,10 +909,6 @@ class AIChatController extends Controller
                         ->stream(
                             $history,
                             function (string $chunk, string $type = 'content') use (&$fullReply) {
-                                // "thinking" chunks (reasoning models) are never
-                                // added to the persisted/returned reply — only
-                                // relayed live so the UI can show something is
-                                // happening instead of a silent gap.
                                 if ($type === 'thinking') {
                                     echo "data: " . json_encode(['thinking' => $chunk]) . "\n\n";
                                 } else {
@@ -919,9 +921,15 @@ class AIChatController extends Controller
                         );
                 }
             } catch (ConnectionException $e) {
-                echo "data: " . json_encode(['error' => ChatGuard::publicErrorMessage($e, $request)]) . "\n\n";
+                $errorText   = ChatGuard::publicErrorMessage($e, $request);
+                $fullReply   = '⚠ ' . $errorText;
+                $turnFailed  = true;
+                echo "data: " . json_encode(['error' => $errorText]) . "\n\n";
             } catch (\Exception $e) {
-                echo "data: " . json_encode(['error' => ChatGuard::publicErrorMessage($e, $request)]) . "\n\n";
+                $errorText   = ChatGuard::publicErrorMessage($e, $request);
+                $fullReply   = '⚠ ' . $errorText;
+                $turnFailed  = true;
+                echo "data: " . json_encode(['error' => $errorText]) . "\n\n";
             }
 
             if ($fullReply && !$disableStorage) {
@@ -936,7 +944,9 @@ class AIChatController extends Controller
                     if (ob_get_level() > 0) { ob_flush(); }
                     flush();
 
-                    $this->fireWebhook($session, $message, $fullReply, $provider);
+                    if (!$turnFailed) {
+                        $this->fireWebhook($session, $message, $fullReply, $provider);
+                    }
                 } catch (\Throwable $e) {
                     // Let the shutdown-function safety net above have a shot
                     // at it too ($saved is still false) — this just stops a

@@ -1,5 +1,17 @@
 # Changelog
 
+## v2.18.1 — 2026-08-15
+
+### 🐛 Fix: a failed chat turn left an orphaned message, confusing the next one
+
+Found live: a real Ollama server had a momentary connection drop mid-reply. The turn failed as expected (an error shown to the user), but the user's message that triggered it was never paired with an assistant reply in the database — `$fullReply` stayed empty on an exception, so the save block never ran, and the shutdown-safety-net (which exists for exactly this kind of mid-stream death) also no-ops on an empty reply. The very next message then replayed that broken, unpaired-user-turn history to the model — which made an otherwise well-behaved tool-calling model (`qwen3:8b`) call the `web_search` tool for a plain "hi", because as far as it could tell the previous question was still unanswered. Verified directly: the identical prompt sent in isolation, with no broken history, correctly skipped the tool (confirmed via a raw request to the real server, tool schema included, model explicitly reasoning "No need to use any tools for this").
+
+This wasn't just a confusing-Ollama-response issue — providers that strictly enforce alternating user/assistant roles (OpenAI, Anthropic) could plausibly reject the *next* message outright over the same gap, a worse and harder-to-diagnose failure than a merely-confused local model.
+
+A failed turn now persists a placeholder assistant reply — the same `"⚠ {error}"` text the chat UI already renders live client-side (`resources/views/chat.blade.php`'s `'⚠ ' + d.error`), just also saved server-side now instead of vanishing the moment the page reloads. Conversation history stays correctly paired for whatever comes next, regardless of provider. The (opt-in, off by default) webhook does *not* fire for these placeholder turns — it's still only for genuine AI replies.
+
+1 new regression test in `ChatFlowTest`: simulates a real connection failure mid-turn, confirms the SSE stream still finishes cleanly, and confirms a `⚠ `-prefixed assistant message is persisted immediately after the user's turn rather than leaving it orphaned. 290/290 tests passing (6 skipped, imagick-gated).
+
 ## v2.18.0 — 2026-08-15
 
 ### 🔎 Web search settings, manageable from the Settings UI

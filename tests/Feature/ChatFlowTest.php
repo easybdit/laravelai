@@ -151,6 +151,50 @@ class ChatFlowTest extends TestCase
         }
     }
 
+    /**
+     * Found live: a turn that fails (connection refused, provider error)
+     * used to leave $fullReply empty, so nothing got saved — the user's
+     * message stayed as an orphaned, unpaired turn with no assistant reply
+     * after it. The *next* message then replayed that broken alternation
+     * as history, which on a real Ollama server made an otherwise-sensible
+     * tool-calling model call web_search for a plain "hi", still trying to
+     * resolve the previous, never-answered question. Locks in the fix: a
+     * failed turn now persists a placeholder assistant reply (same "⚠ "
+     * text the client already renders live), keeping history paired for
+     * whatever comes next.
+     */
+    public function test_a_failed_turn_still_persists_a_placeholder_assistant_reply(): void
+    {
+        $session = ChatSession::create(['title' => 'Existing chat']);
+        ChatMessage::create(['chat_session_id' => $session->id, 'role' => 'user', 'content' => 'first question']);
+        ChatMessage::create(['chat_session_id' => $session->id, 'role' => 'assistant', 'content' => 'first answer']);
+
+        Http::fake(function () {
+            throw new \Illuminate\Http\Client\ConnectionException('Connection refused');
+        });
+
+        $response = $this->call('POST', '/ai-chat/api/stream', [
+            'message'    => 'hi',
+            'session_id' => $session->id,
+        ], [], [], ['HTTP_ACCEPT' => 'text/event-stream']);
+
+        $response->assertOk();
+        $content = $response->streamedContent();
+
+        $this->assertStringContainsString('"error"', $content);
+        $this->assertStringContainsString('[DONE]', $content);
+
+        // The user's turn didn't end up orphaned — a paired assistant
+        // reply exists right after it, so the next message's history stays
+        // correctly alternating.
+        $placeholder = ChatMessage::where('chat_session_id', $session->id)
+            ->where('role', 'assistant')
+            ->latest('id')
+            ->first();
+        $this->assertNotNull($placeholder, 'Expected a placeholder assistant reply to be persisted for the failed turn.');
+        $this->assertStringStartsWith('⚠ ', $placeholder->content);
+    }
+
     public function test_stream_blocks_message_over_configured_length(): void
     {
         // 50 is a hard floor enforced by ChatGuard regardless of config —
