@@ -1,5 +1,23 @@
 # Changelog
 
+## v2.20.0 — 2026-08-15
+
+### 📤 Public conversation share links (Phase 2 of 2)
+
+`AI_CHAT_SHARE_ENABLED`'s Share dropdown (v2.19.0 — WhatsApp/Email, raw message text) gains a real public, read-only link for the whole conversation — this is what unlocks the two things text-only sharing genuinely couldn't do: a meaningful Facebook share (its dialog needs an actual URL, not text) and WhatsApp/Email sharing something the recipient can actually open and read, not just a pasted quote.
+
+`ai_chat_sessions` gets a new nullable, unique `share_token` column — distinct from the existing `guest_token` (which identifies *your own browser* for ownership checks and must never leave it). Opening any message's Share menu lazily generates the link on first use (idempotent — `AIChatController::shareLink()` reuses the existing token rather than minting a new one each time, "get shareable link" UX, no separate explicit step), then all four options (WhatsApp, Email, Facebook, Copy link) point at it.
+
+`GET /ai-chat/s/{token}` renders a new, minimal `public-share.blade.php` view — transcript only, no send box, no export/feedback/regenerate controls, `noindex` so a link someone chose to hand out deliberately doesn't also end up in Google. **Genuinely no auth or ownership check at all** on that route, by design — registered *outside* `ChatServiceProvider`'s `config('ai.chat.middleware')` group specifically so a host app's `AI_CHAT_MIDDLEWARE=auth` (which can lock down the rest of `/ai-chat`) can't accidentally lock out a link its own users explicitly generated to be public. Verified this wiring by reading the actual route registration before writing the new route, not assumed.
+
+`POST .../sessions/{id}/share` (generate/reuse) and `DELETE .../sessions/{id}/share` (revoke) both keep the same ownership check every other session-scoped endpoint on this controller already has (`ChatIdentity::resolve()` + `isOwnedBy()`) — only the public *viewing* route skips it. Revoking isn't wired to a UI button yet (backend-only for now) — a link stays live until explicitly revoked via that endpoint.
+
+Known limitation, honestly scoped rather than silently half-built: the public view shows message text only — attachments (images/documents) embedded in a shared conversation aren't rendered there yet.
+
+7 new tests in `ShareLinkTest`: generating/revoking both require ownership, the public route renders with zero auth, an unknown token 404s, revoking clears the token and 404s the old link immediately, and the public view is confirmed free of send-box/export/feedback/CSRF markup. 299/299 tests passing (6 skipped, imagick-gated).
+
+Minor release (new backward-compatible capability): v2.20.0.
+
 ## v2.19.0 — 2026-08-15
 
 ### 📤 Share a reply — WhatsApp, Email (Phase 1 of 2)

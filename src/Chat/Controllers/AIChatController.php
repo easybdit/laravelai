@@ -332,6 +332,64 @@ class AIChatController extends Controller
         ]);
     }
 
+    /**
+     * Generates (or returns the already-existing) public share link for
+     * this session — idempotent, same "repeat clicks return the same
+     * result" posture as everything else on this controller. Generated
+     * the same way guest_token is (Str::random(40)) but serves an
+     * entirely different purpose: guest_token identifies the guest's own
+     * browser for ownership checks and must never leave it; share_token
+     * is deliberately meant to be handed to someone else.
+     */
+    public function shareLink(Request $request, ChatSession $session)
+    {
+        [$userId, $guestToken] = ChatIdentity::resolve($request);
+        if (!$session->isOwnedBy($userId, $guestToken)) {
+            abort(403);
+        }
+
+        if (!$session->share_token) {
+            $session->update(['share_token' => Str::random(40)]);
+        }
+
+        return response()->json(['url' => route('ai-chat.share.view', $session->share_token)]);
+    }
+
+    /** Revokes a share link — the old URL 404s immediately after (publicShare() below looks the token up fresh every time, no caching). */
+    public function unshareLink(Request $request, ChatSession $session)
+    {
+        [$userId, $guestToken] = ChatIdentity::resolve($request);
+        if (!$session->isOwnedBy($userId, $guestToken)) {
+            abort(403);
+        }
+
+        $session->update(['share_token' => null]);
+
+        return response()->json(['ok' => true]);
+    }
+
+    /**
+     * The public, read-only page a share link resolves to — deliberately
+     * no ChatIdentity::resolve()/isOwnedBy() check at all here, unlike
+     * every other method on this controller that touches a ChatSession.
+     * That's the entire point of a share link: whoever has it can view
+     * the conversation, logged in or not, on this app or a different
+     * browser/device entirely. Registered outside the config('ai.chat.middleware')
+     * gate in ChatServiceProvider so a host app's AI_CHAT_MIDDLEWARE=auth
+     * (which locks down the rest of /ai-chat) can't accidentally lock out
+     * a link that was explicitly generated to be public.
+     */
+    public function publicShare(string $token)
+    {
+        $session  = ChatSession::where('share_token', $token)->firstOrFail();
+        $messages = $session->messages()->orderBy('created_at')->get();
+
+        return view('laravelai::public-share', [
+            'session'  => $session,
+            'messages' => $messages,
+        ]);
+    }
+
     /** Hard cap on how many images ride along as vision input on one message — a directly attached image, or a PDF's rendered pages, or both mixed together. */
     private const MAX_VISION_IMAGES = 6;
 

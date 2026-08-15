@@ -524,8 +524,10 @@
                             <div class="share-menu">
                                 <button class="icon-action" onclick="toggleShareMenu(event, this)">📤 Share</button>
                                 <div class="share-menu-list">
-                                    <button onclick="shareViaWhatsApp({{ json_encode($msg->content) }})">💬 WhatsApp</button>
-                                    <button onclick="shareViaEmail({{ json_encode($msg->content) }})">✉️ Email</button>
+                                    <button onclick="shareViaWhatsApp()">💬 WhatsApp</button>
+                                    <button onclick="shareViaEmail()">✉️ Email</button>
+                                    <button onclick="shareViaFacebook()">📘 Facebook</button>
+                                    <button onclick="copyShareLink(this)">🔗 Copy link</button>
                                 </div>
                             </div>
                             @endif
@@ -1013,8 +1015,10 @@ function addAssistantActions(bubbleWrap, content, msgId) {
         <div class="share-menu">
             <button class="icon-action" onclick="toggleShareMenu(event, this)">📤 Share</button>
             <div class="share-menu-list">
-                <button onclick="shareViaWhatsApp(${JSON.stringify(content)})">💬 WhatsApp</button>
-                <button onclick="shareViaEmail(${JSON.stringify(content)})">✉️ Email</button>
+                <button onclick="shareViaWhatsApp()">💬 WhatsApp</button>
+                <button onclick="shareViaEmail()">✉️ Email</button>
+                <button onclick="shareViaFacebook()">📘 Facebook</button>
+                <button onclick="copyShareLink(this)">🔗 Copy link</button>
             </div>
         </div>
         @endif
@@ -1213,29 +1217,70 @@ function closeExportMenu() {
 document.addEventListener('click', closeExportMenu);
 
 // ── SHARE MENU (one per message, not a single #id — see the .share-menu CSS comment) ──
-function toggleShareMenu(e, btn) {
+// All four options share the *whole conversation* via one session-level
+// public link, not the one message whose dropdown happened to be open —
+// a message's own Share button is just the nearest access point, not a
+// per-message share target (Facebook's sharer specifically needs a real
+// URL to point at, not raw text, so there's no meaningful "share just
+// this message" version of it anyway).
+let shareLinkCache = null;
+
+/** Lazily creates (or reuses) this session's public share link — a "Get shareable link" pattern, not a separate explicit generate step. Idempotent server-side (AIChatController::shareLink()), and cached here for the rest of this page view. */
+async function ensureShareLink() {
+    if (shareLinkCache) return shareLinkCache;
+    if (!SESSION_ID) return null;
+
+    try {
+        const r = await fetch(`{{ url('ai-chat/api/sessions') }}/${SESSION_ID}/share`, {
+            method: 'POST',
+            headers: { 'X-CSRF-TOKEN': CSRF },
+        });
+        if (!r.ok) { alert('Could not create a share link.'); return null; }
+        const d = await r.json();
+        shareLinkCache = d.url;
+        return shareLinkCache;
+    } catch (e) {
+        alert('Could not create a share link — connection error.');
+        return null;
+    }
+}
+
+async function toggleShareMenu(e, btn) {
     e.stopPropagation();
     const list = btn.nextElementSibling;
     document.querySelectorAll('.share-menu-list.open').forEach(el => { if (el !== list) el.classList.remove('open'); });
     list?.classList.toggle('open');
+    if (list?.classList.contains('open')) ensureShareLink(); // pre-warm — don't block the menu opening on it
 }
 document.addEventListener('click', () => {
     document.querySelectorAll('.share-menu-list.open').forEach(el => el.classList.remove('open'));
 });
 
-/**
- * WhatsApp's "click to chat" URL — no API key, no app install required,
- * works identically on desktop (opens WhatsApp Web) and mobile (opens the
- * app). Phase 2 will switch this to share a real public link once one
- * exists; for now it shares the message's own text, same as Email below.
- */
-function shareViaWhatsApp(text) {
-    window.open(`https://wa.me/?text=${encodeURIComponent(text)}`, '_blank');
+/** WhatsApp's "click to chat" URL — no API key, no app install required, works identically on desktop (WhatsApp Web) and mobile (the app). */
+async function shareViaWhatsApp() {
+    const url = await ensureShareLink();
+    if (url) window.open(`https://wa.me/?text=${encodeURIComponent(url)}`, '_blank');
 }
 
-/** mailto: needs no backend at all — opens whatever mail client/webmail the OS has configured. */
-function shareViaEmail(text) {
-    window.location.href = `mailto:?subject=${encodeURIComponent('Shared from AI Chat')}&body=${encodeURIComponent(text)}`;
+/** mailto: needs no backend of its own — opens whatever mail client/webmail the OS already has configured. */
+async function shareViaEmail() {
+    const url = await ensureShareLink();
+    if (url) window.location.href = `mailto:?subject=${encodeURIComponent('Shared from AI Chat')}&body=${encodeURIComponent(url)}`;
+}
+
+/** Facebook's sharer dialog takes a URL, not text — this is exactly why Share couldn't do anything Facebook-shaped until a real public link existed. */
+async function shareViaFacebook() {
+    const url = await ensureShareLink();
+    if (url) window.open(`https://www.facebook.com/sharer/sharer.php?u=${encodeURIComponent(url)}`, '_blank');
+}
+
+async function copyShareLink(btn) {
+    const url = await ensureShareLink();
+    if (!url) return;
+    await navigator.clipboard.writeText(url);
+    const original = btn.textContent;
+    btn.textContent = '✓ Copied';
+    setTimeout(() => { btn.textContent = original; }, 1500);
 }
 
 async function exportServerSide(format) {

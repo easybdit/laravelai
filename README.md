@@ -603,17 +603,23 @@ composer require phpoffice/phppresentation  # PowerPoint (.pptx) — one slide p
 
 A reply that's *only* a generated picture (the `/image` command's output — see [Image generation](SETUP_GUIDE.md#8-image-generation)) gets its own export buttons instead of the generic "save as .txt": ⬇ PNG, ⬇ JPEG, ⬇ PDF, right on that message. Zero extra dependencies — PNG/JPEG are re-encoded client-side through a `<canvas>` (so the download always genuinely matches the extension, whatever format the server actually stored), and PDF opens the browser's own print dialog pre-sized to just the image — "Save as PDF" is a built-in destination there on effectively every modern browser, no PDF-writing library needed for one picture.
 
-### 📤 Sharing a reply — WhatsApp, Email
+### 📤 Sharing a conversation — WhatsApp, Email, Facebook, or a link
 
-> **New in v2.19.0**
+> **New in v2.19.0** (WhatsApp/Email), **v2.20.0** (public link, Facebook)
 
-Every assistant reply gets a **📤 Share** dropdown right next to Copy — opens WhatsApp's "click to chat" link or a `mailto:` draft, pre-filled with that message's text. Zero setup, zero backend calls (no API key, no external service) — same posture as Copy/Save. Turn it off with:
+Every assistant reply gets a **📤 Share** dropdown right next to Copy. Opening it (from any message — it's a convenient access point, not a per-message share) generates a public, read-only link to the *whole conversation* the first time you use it — same "get shareable link" idea as Google Docs, no separate explicit step:
+
+- **WhatsApp** / **Email** — pre-filled with the link
+- **Facebook** — opens Facebook's share dialog pointed at the link (this needed a real URL to exist first, which is why it wasn't possible in the WhatsApp/Email-only v2.19.0)
+- **Copy link** — clipboard
+
+The link (`/ai-chat/s/{token}`) renders a minimal, read-only transcript — no send box, no export/feedback controls, no login required to view it, and it's excluded from search-engine indexing (`noindex`). It stays live until you explicitly revoke it (`DELETE /ai-chat/api/sessions/{id}/share` — not yet in the UI as a button, the link simply doesn't expire on its own). Turn the whole Share feature off with:
 
 ```env
 AI_CHAT_SHARE_ENABLED=false
 ```
 
-This shares the message's *text* today — a real, ownership-gated public link (and a genuinely useful Facebook share, which needs an actual URL to point at) is a planned follow-up, not yet built.
+Sharing a conversation makes its full content visible to anyone with the link — nothing is shared until you deliberately open the Share menu on it.
 
 ## 📎 Attachments & Vision
 
@@ -1521,6 +1527,7 @@ Either way, the sidebar's identity line will pick up the resolved identity autom
 | v2.17 | Gemini image generation ("Nano Banana" model family) — `AI::provider('gemini')->generateImage()` + `AI_GEMINI_IMAGE_ENABLED` wired into the same `/image` command | ✅ Released |
 | v2.18 | Web search settings (on/off, provider, both API keys) manageable from `/ai-chat/settings`' new 🔎 Web Search tab — no `.env` edit needed | ✅ Released |
 | v2.19 | 📤 Share a reply via WhatsApp/Email — first of two share phases; a real public share-link (and a genuinely useful Facebook share) is next | ✅ Released |
+| v2.20 | 📤 Public, read-only conversation share links (`/ai-chat/s/{token}`) — unlocks Facebook sharing + link-based WhatsApp/Email, second of two share phases | ✅ Released |
 
 ---
 

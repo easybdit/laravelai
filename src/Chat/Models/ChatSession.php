@@ -14,7 +14,7 @@ class ChatSession extends Model
     // reasoning as ai_projects/ai_project_files).
     protected $table = 'ai_chat_sessions';
 
-    protected $fillable = ['title', 'project_id', 'user_id', 'guest_token', 'provider', 'profile'];
+    protected $fillable = ['title', 'project_id', 'user_id', 'guest_token', 'share_token', 'provider', 'profile'];
 
     public function messages(): HasMany
     {

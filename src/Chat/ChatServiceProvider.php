@@ -2,6 +2,7 @@
 
 namespace EasyAI\LaravelAI\Chat;
 
+use EasyAI\LaravelAI\Chat\Controllers\AIChatController;
 use EasyAI\LaravelAI\Chat\Models\AiAdmin;
 use EasyAI\LaravelAI\Chat\Support\SettingsOverlay;
 use Illuminate\Support\Facades\Gate;
@@ -33,6 +34,20 @@ class ChatServiceProvider extends ServiceProvider
             return Schema::hasTable('ai_admins')
                 && AiAdmin::where('user_id', $user->getAuthIdentifier())->exists();
         });
+
+        // The public share-link viewing page — deliberately registered
+        // *outside* the config('ai.chat.middleware') group below. A host
+        // app can set AI_CHAT_MIDDLEWARE=auth to require login for the
+        // rest of /ai-chat, but a link a user explicitly generated to
+        // share a conversation has to stay viewable by someone with no
+        // account at all — that's the entire point of "share this link".
+        // Still under 'web' for the same cookie/session consistency as
+        // the rest of the chat UI, just never gated by that extra
+        // middleware. AIChatController::publicShare() does no ownership
+        // check of its own either, by the same design.
+        Route::middleware(['web'])
+            ->get('ai-chat/s/{token}', [AIChatController::class, 'publicShare'])
+            ->name('ai-chat.share.view');
 
         // Routes need the 'web' group explicitly — loadRoutesFrom() alone
         // doesn't apply it, and this chat depends on sessions (provider

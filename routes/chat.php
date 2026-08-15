@@ -33,6 +33,8 @@ Route::prefix('ai-chat')->name('ai-chat.')->group(function () {
         Route::get('sessions/{session}/export/{format}', [AIChatController::class, 'export'])
             ->whereIn('format', ['pdf', 'docx', 'xlsx', 'pptx'])
             ->name('sessions.export');
+        Route::post('sessions/{session}/share',    [AIChatController::class, 'shareLink'])->name('sessions.share');
+        Route::delete('sessions/{session}/share',  [AIChatController::class, 'unshareLink'])->name('sessions.unshare');
 
         // ── Attachments ──────────────────────────────────────────────────
         Route::post('attachments',                [ChatAttachmentController::class, 'store'])->name('attachments.store');
