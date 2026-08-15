@@ -1,5 +1,15 @@
 # Changelog
 
+## v2.12.1 — 2026-08-16
+
+### 🧹 Removed a dead duplicate file (`src/RAG/Console/RagIngestCommand.php`)
+
+Flagged during a previous session as an unautoloadable copy-paste/incomplete-move leftover, not acted on until now. The real, registered `ai:rag:ingest` command has always lived at `src/Console/RagIngestCommand.php` (confirmed the only one referenced in `AIServiceProvider.php`); this second copy under `src/RAG/Console/` declared the exact same class name (`EasyAI\LaravelAI\Console\RagIngestCommand`) from a location PSR-4 could never actually resolve it from, so it was 100% dead — a stale, less-complete earlier draft (diffed against the real file to confirm no unique logic before deleting).
+
+No behavior change for any install: the standard PSR-4 autoloader never found this file in the first place. Verified one concrete, if minor, real-world effect of removing it: `composer dump-autoload -o` (optimized/classmap autoloading, common in production) printed a "does not comply with psr-4 autoloading standard... Skipping" warning for this file on every build — gone now.
+
+253/253 tests passing (no test changes — nothing ever exercised the dead file).
+
 ## v2.12.0 — 2026-08-15
 
 ### ⬇️ Export a generated image as PNG, JPEG, or PDF
