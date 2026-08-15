@@ -592,7 +592,7 @@ composer require phpoffice/phpspreadsheet   # Excel (.xlsx) — one row per mess
 composer require phpoffice/phppresentation  # PowerPoint (.pptx) — one slide per message
 ```
 
-Not installed yet? The download attempt shows exactly which command to run instead of failing silently. PowerPoint is the odd one out of the four — slides don't paginate long text the way a document does, so it suits short conversations best; PDF or Word read better for a long transcript.
+`php artisan laravelai:install` offers to run whichever of these you want right then, so you never have to come back and run them by hand later. Not installed yet, and skipped the prompt? The download attempt shows exactly which command to run instead of failing silently. PowerPoint is the odd one out of the four — slides don't paginate long text the way a document does, so it suits short conversations best; PDF or Word read better for a long transcript.
 
 ### Exporting a generated image — PNG, JPEG, or PDF
 
@@ -600,7 +600,7 @@ A reply that's *only* a generated picture (the `/image` command's output — see
 
 ## 📎 Attachments & Vision
 
-> **New in v2.0.0** — `AI_CHAT_ATTACHMENTS_ENABLED=true`
+> **New in v2.0.0** — `AI_CHAT_ATTACHMENTS_ENABLED=true`, or say "yes" when `php artisan laravelai:install` asks — it sets the flag and runs `composer require smalot/pdfparser` for you.
 
 Upload images and documents (`.txt`/`.md`/`.pdf`) mid-chat. Documents are text-extracted and appended as context for **every** provider; images become real vision input for OpenAI, Anthropic, and Gemini (via a universal multipart message format translated per-provider), with a "this provider can't view images" fallback note for everyone else. More than one image can ride along on a single message — a direct upload and a PDF's rendered pages (below) can even be mixed together, up to 6 total.
 
@@ -1454,6 +1454,8 @@ Either way, the sidebar's identity line will pick up the resolved identity autom
 | v2.12 | Per-image export — ⬇ PNG / ⬇ JPEG / ⬇ PDF buttons on any reply that's just a generated image | ✅ Released |
 | v2.13 | PDF page-image vision (`pdf_vision_enabled`) — a PDF's actual pages, not just its extracted text, become real vision input for OpenAI/Anthropic/Gemini; multi-image vision support (was one image per message, max) | ✅ Released |
 | v2.14 | Streaming the agent module's final answer after the tool-call loop resolves — `run()`'s new `$onChunk` param, every driver's stream handler now reassembles tool calls from that provider's own real incremental format | ✅ Released |
+| v2.14.1 | Removed a dead duplicate file (`src/RAG/Console/RagIngestCommand.php`, unautoloadable, flagged in an earlier session); CI fix — the DB-matrix job was missing the Ghostscript + `imagick` setup needed to actually test PDF page-image vision, not just skip it | ✅ Released |
+| v2.15 | `laravelai:install` now offers to run `composer require` for whichever optional features you say yes to (chat attachments, PDF vision, each export format) instead of you hitting a "run this command" message on first use | ✅ Released |
 
 ---
 

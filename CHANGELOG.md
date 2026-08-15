@@ -1,5 +1,22 @@
 # Changelog
 
+## v2.15.0 — 2026-08-16
+
+### 🧙 The installer now offers to install optional dependencies for you
+
+Chat attachments and conversation export have always worked with zero forced setup — turn the flag on, or click export, and it just works once its one optional composer package is installed; until then it fails with a clear "run this command" message rather than silently. That message is good UX the first time you didn't know it was coming, but real friction for someone who already knows they want the feature and now has to go copy-paste a command they were just told about.
+
+`php artisan laravelai:install` closes that gap — asks two new questions after picking a provider:
+
+- **Chat attachments** — say yes and it sets `AI_CHAT_ATTACHMENTS_ENABLED=true` and runs `composer require smalot/pdfparser` for you (needed for PDF documents, in the default `allowed_docs` list). Say yes again to PDF page-image vision specifically, and it checks for the PHP `imagick` extension first — sets `AI_CHAT_PDF_VISION_ENABLED=true` only if it's actually there, otherwise warns and skips (turning the flag on without imagick would just log a warning on every upload, not do anything).
+- **Conversation export** — already on by default with no flag of its own; this just offers to `composer require` whichever of `dompdf/dompdf`, `phpoffice/phpword`, `phpoffice/phpspreadsheet`, `phpoffice/phppresentation` you actually want ready to use right away.
+
+Say no to everything and it's a complete no-op — every one of these stays exactly as opt-in as it's always been; this isn't a change to any default, only a shortcut for people who already know what they want. A failed `composer require` (no network, composer not on PATH, a version conflict) warns with the one command to run manually rather than failing the whole install — same "always leave a manual escape hatch" posture as every other step in this command.
+
+Deliberately shells out to the *host app's own* `composer require` (via the `Illuminate\Support\Facades\Process` facade, new required dependency `illuminate/process`, part of Laravel core since 10.0) rather than vendoring a copy of any of these libraries — each is a real, independently-versioned package, and the host app's own `composer.json`/lock file is the one source of truth for what's actually compatible with it.
+
+6 new tests covering: declining everything runs no composer command at all, attachments-on installs pdfparser, PDF vision enables only when imagick is genuinely present (environment-gated the same honest way as `PdfPageRendererTest` — skips cleanly on a machine without imagick, runs for real where it's installed), each export format is installed only when confirmed, and a failed composer command warns without failing the overall install. All 4 pre-existing installer tests updated for the two new prompts. 276/276 tests passing.
+
 ## v2.14.1 — 2026-08-16
 
 ### 🧹 Removed a dead duplicate file (`src/RAG/Console/RagIngestCommand.php`)
