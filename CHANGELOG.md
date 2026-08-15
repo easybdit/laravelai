@@ -1,5 +1,21 @@
 # Changelog
 
+## v2.16.0 — 2026-08-15
+
+### 🖼️ The `/image` chat command is provider-selectable, not Together-only
+
+`AI::provider('openai')->generateImage()` (dall-e-3/gpt-image-1) has worked as a plain PHP call since it shipped, but the chat UI's `/image`/`/img` command was hardcoded to `AI::provider('together')` regardless of which provider you were actually chatting with or had configured — OpenAI's own image generation was reachable from code, never from the chat window.
+
+`config('ai.providers.openai.image_enabled')` is new (`AI_OPENAI_IMAGE_ENABLED`, off by default — same opt-in posture as Together's own flag, since image generation bills separately from chat) and now feeds the same `/image` command through a new `AIChatController::resolveImageProvider()`:
+
+- If the chat session's **currently active provider** is image-capable (`openai` or `together`) and has its own `image_enabled` on, that's the one used — asking for an image while talking to OpenAI actually calls OpenAI, not a different provider you never picked.
+- Otherwise it falls back to whichever of the other image-capable providers has `image_enabled` on — Together stays first in that fallback order, so an existing Together-only setup behaves byte-for-byte the same as before this release, no matter which provider the chat itself is using.
+- If neither has it on, `/image ...` is left alone as plain chat text, same as today.
+
+Wired into the Settings UI for free — `image_enabled`/`image_model` were added to OpenAI's existing generic `PROVIDER_FIELDS` list, so the checkbox/field render and save through the same machinery Together's already used, no new Blade markup needed.
+
+3 new tests: active-provider preference (OpenAI wins over an also-enabled Together when OpenAI is the active chat provider), fallback to Together when the active provider can't generate images at all (Ollama), and the no-provider-enabled case staying a no-op. 279/279 tests passing (6 skipped, imagick-gated).
+
 ## v2.15.1 — 2026-08-15
 
 ### 🔧 CI: Laravel 11 leg restored to the test matrix

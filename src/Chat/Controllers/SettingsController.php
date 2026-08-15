@@ -24,7 +24,7 @@ class SettingsController extends Controller
 {
     private const PROVIDER_FIELDS = [
         'ollama'    => ['url', 'model', 'timeout', 'keep_alive'],
-        'openai'    => ['api_key', 'model', 'timeout'],
+        'openai'    => ['api_key', 'model', 'timeout', 'image_enabled', 'image_model'],
         'anthropic' => ['api_key', 'model', 'timeout'],
         'deepseek'  => ['api_key', 'model', 'timeout'],
         'gemini'    => ['api_key', 'model', 'timeout'],

@@ -769,7 +769,13 @@ AI_OPENAI_MODEL=gpt-4o-mini
 $url = AI::provider('openai')->generateImage('a red fox in snow');
 ```
 
-Defaults to `dall-e-3`, returning a hosted URL (valid 60 minutes) — same `generateImage(string): string` contract as Together's FLUX support below, so either drops straight into `![prompt]($url)` markdown or an `<img src>`. Set `AI_OPENAI_IMAGE_MODEL=gpt-image-1` (or `gpt-image-1-mini`/`gpt-image-1.5`) for OpenAI's newer models — they return only base64, no URL option at all, so this returns a `data:image/png;base64,...` string instead: still one usable string, just meaningfully larger if you store the resulting chat message. This is a PHP-API capability only for now — the chat UI's `/image` command is still wired to Together specifically, not provider-selectable yet.
+Defaults to `dall-e-3`, returning a hosted URL (valid 60 minutes) — same `generateImage(string): string` contract as Together's FLUX support below, so either drops straight into `![prompt]($url)` markdown or an `<img src>`. Set `AI_OPENAI_IMAGE_MODEL=gpt-image-1` (or `gpt-image-1-mini`/`gpt-image-1.5`) for OpenAI's newer models — they return only base64, no URL option at all, so this returns a `data:image/png;base64,...` string instead: still one usable string, just meaningfully larger if you store the resulting chat message.
+
+> **New in v2.16.0** — `AI_OPENAI_IMAGE_ENABLED=true` also wires this into the chat UI's `/image`/`/img` command, same as Together's flag below. The command isn't hardcoded to one provider: it uses whichever image-capable provider (`openai`, `together`) is both currently the active chat provider *and* has its own `image_enabled` on; if the active provider can't generate images (or doesn't have it enabled), it falls back to whichever of the other one does — so a Together-only setup keeps working exactly as before, and turning both on lets `/image` "just follow" whichever provider you're actually talking to.
+
+```env
+AI_OPENAI_IMAGE_ENABLED=true
+```
 
 **Speech-to-text and text-to-speech:**
 
@@ -1456,6 +1462,8 @@ Either way, the sidebar's identity line will pick up the resolved identity autom
 | v2.14 | Streaming the agent module's final answer after the tool-call loop resolves — `run()`'s new `$onChunk` param, every driver's stream handler now reassembles tool calls from that provider's own real incremental format | ✅ Released |
 | v2.14.1 | Removed a dead duplicate file (`src/RAG/Console/RagIngestCommand.php`, unautoloadable, flagged in an earlier session); CI fix — the DB-matrix job was missing the Ghostscript + `imagick` setup needed to actually test PDF page-image vision, not just skip it | ✅ Released |
 | v2.15 | `laravelai:install` now offers to run `composer require` for whichever optional features you say yes to (chat attachments, PDF vision, each export format) instead of you hitting a "run this command" message on first use | ✅ Released |
+| v2.15.1 | CI fix — restored the Laravel 11 leg to the test matrix (its earlier "structurally unsatisfiable" dependency conflict no longer reproduces) | ✅ Released |
+| v2.16 | The chat UI's `/image`/`/img` command is provider-selectable — `AI_OPENAI_IMAGE_ENABLED` alongside Together's own flag, following whichever image-capable provider is actually active | ✅ Released |
 
 ---
 

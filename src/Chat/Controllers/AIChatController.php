@@ -37,6 +37,45 @@ class AIChatController extends Controller
     /** Providers with real image/vision understanding wired up. */
     private const VISION_PROVIDERS = ['openai', 'anthropic', 'gemini'];
 
+    /**
+     * Providers with a real generateImage() implementation, in fallback
+     * preference order (see resolveImageProvider()). Together was first to
+     * ship here (FLUX) and stays first in the fallback list so existing
+     * together.image_enabled-only setups keep behaving exactly as before;
+     * openai's dall-e-3/gpt-image-1 support already existed on the driver
+     * but was never reachable from the chat UI's /image command until now.
+     */
+    private const IMAGE_PROVIDERS = ['together', 'openai'];
+
+    /**
+     * Which provider should actually handle a /image or /img command, if
+     * any. Prefers the session's currently active chat provider when it's
+     * also image-capable and has image_enabled on, so asking for an image
+     * while chatting with OpenAI uses OpenAI's own model rather than
+     * silently billing a different provider the user never selected. Falls
+     * back to the first other IMAGE_PROVIDERS entry with image_enabled on,
+     * so a Together-only setup keeps working unchanged no matter which
+     * provider the chat itself is using. Returns null when nothing has
+     * image generation enabled at all — the caller then lets the message
+     * flow through as a normal chat turn, exactly like today when no
+     * provider's image_enabled is on.
+     */
+    private function resolveImageProvider(string $activeProvider): ?string
+    {
+        if (in_array($activeProvider, self::IMAGE_PROVIDERS, true)
+            && config("ai.providers.{$activeProvider}.image_enabled", false)) {
+            return $activeProvider;
+        }
+
+        foreach (self::IMAGE_PROVIDERS as $provider) {
+            if (config("ai.providers.{$provider}.image_enabled", false)) {
+                return $provider;
+            }
+        }
+
+        return null;
+    }
+
     /** Built-in providers configured (have a key/URL) plus every named custom endpoint. */
     private function availableProviders(): array
     {
@@ -383,13 +422,15 @@ class AIChatController extends Controller
     }
 
     /**
-     * Together AI's FLUX image generation, reached via a "/image {prompt}"
-     * or "/img {prompt}" command — mirrors the WordPress plugin's routing.
-     * Only active when config('ai.providers.together.image_enabled') is on.
+     * Image generation reached via a "/image {prompt}" or "/img {prompt}"
+     * chat command — mirrors the WordPress plugin's routing. $providerKey
+     * is whatever resolveImageProvider() picked (Together's FLUX or
+     * OpenAI's dall-e-3/gpt-image-1 today), already confirmed to have
+     * image_enabled on for that provider.
      */
-    private function streamImageGeneration(ChatSession $session, string $prompt, bool $disableStorage, bool $isFirstMessage)
+    private function streamImageGeneration(ChatSession $session, string $providerKey, string $prompt, bool $disableStorage, bool $isFirstMessage)
     {
-        return response()->stream(function () use ($session, $prompt, $disableStorage, $isFirstMessage) {
+        return response()->stream(function () use ($session, $providerKey, $prompt, $disableStorage, $isFirstMessage) {
             // See the same guard in stream() — image generation is also a
             // single potentially-slow external call, and the save below it
             // shouldn't be at the mercy of php.ini's max_execution_time.
@@ -409,7 +450,7 @@ class AIChatController extends Controller
             }
 
             try {
-                $url = AI::provider('together')->generateImage($prompt);
+                $url = AI::provider($providerKey)->generateImage($prompt);
             } catch (\Throwable $e) {
                 echo "data: " . json_encode(['error' => 'Image generation failed: ' . $e->getMessage()]) . "\n\n";
                 echo "data: [DONE]\n\n";
@@ -618,9 +659,11 @@ class AIChatController extends Controller
         $provider = $session->provider ?: $this->activeProvider($request);
         $profile  = $this->resolveProfile($session->profile);
 
-        if (!$isRegenerate && config('ai.providers.together.image_enabled', false)
-            && preg_match('/^\/(?:image|img)\s+(.+)$/is', $message, $imageMatch)) {
-            return $this->streamImageGeneration($session, trim($imageMatch[1]), $disableStorage, $session->messages->isEmpty());
+        if (!$isRegenerate && preg_match('/^\/(?:image|img)\s+(.+)$/is', $message, $imageMatch)) {
+            $imageProvider = $this->resolveImageProvider($provider);
+            if ($imageProvider) {
+                return $this->streamImageGeneration($session, $imageProvider, trim($imageMatch[1]), $disableStorage, $session->messages->isEmpty());
+            }
         }
 
         if ($isRegenerate) {
